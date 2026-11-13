@@ -59,3 +59,12 @@
   (is (g/passed? (run (butlast expected))) "one of six missing")
   (is (not (g/passed? (run (take 3 expected)))) "half missing")
   (is (not (g/passed? (run (sort (conj expected 1.5))))) "one stray tap"))
+
+(deftest rushing-the-rests-shows-in-gaps
+  (let [q-rest [0 1.2 2.4 3.6]
+        steady (run (map + q-rest [-0.06 -0.06 -0.06 -0.06]) :expected q-rest)
+        rushed (run (map + q-rest [-0.06 -0.12 -0.18 -0.23]) :expected q-rest)]
+    (is (< (Math/abs (:gaps steady)) 1e-9))
+    (is (< -0.07 (:gaps rushed) -0.05))
+    (is (pos? (:missed rushed)) "the late taps fall outside their windows, the gaps still count")
+    (is (nil? (:gaps (run expected))) "no gap longer than a beat")))

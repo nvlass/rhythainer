@@ -106,6 +106,8 @@
     :on-time "Right on time."
     :early (fn [_ ms] (str "On average " ms " ms early: you're rushing a little."))
     :late (fn [_ ms] (str "On average " ms " ms late: you're dragging a little."))
+    :rushed-gaps (fn [_ ms] (str "You cut the rests and long notes short, by " ms " ms each: count them out to the end."))
+    :dragged-gaps (fn [_ ms] (str "You held the rests and long notes too long, by " ms " ms each."))
     :new-record "New record!"
     :session-score (fn [_ pct mode level] (str "Score " pct "% · " mode " · level " level))
     :new-session "New round"
@@ -113,7 +115,7 @@
     :tolerance-hint (fn [_ ms pct] (str "A tap counts within ±" ms " ms or ±" pct "% of a beat, whichever is wider. Changing it also sets a suitable tempo."))
     :syllables "Rhythm syllables"
     :tap-sound "Sound on tap"
-    :tap-sound-hint "a woodblock knock for every tap (never in quick dive, where the rhythm plays along)"
+    :tap-sound-hint "a woodblock knock for every tap; in quick dive a short tick instead, so you hear whether you land with the rhythm"
     :latency "Tap delay correction (ms)"
     :latency-hint "Bluetooth headphones and some devices play sound late. Calibrate: tap along with 12 clicks."
     :tap-along "Tap along with the clicks"

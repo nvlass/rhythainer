@@ -99,9 +99,21 @@
   [best]
   (cond (>= best 6) 3 (>= best 4) 2 (>= best 2) 1 :else 0))
 
+(defn- long-gaps
+  "Mean change, in seconds, of the tapped interval over each gap longer than a beat (rests, long notes):
+   negative when the student rushes through them. Taps pair with notes by order when the counts agree,
+   since a rushed rest pushes taps out of their windows, otherwise by the alignment. Nil under two gaps."
+  [expected s-taps pairs beat-s]
+  (let [at (if (= (count s-taps) (count expected)) s-taps (into {} (for [[i j] pairs] [i (s-taps j)])))
+        ds (for [i (range 1 (count expected))
+                 :let [a (at (dec i)) b (at i) gap (- (expected i) (expected (dec i)))]
+                 :when (and a b (> gap (* 1.01 beat-s)))]
+             (- (- b a) gap))]
+    (when (>= (count ds) 2) (mean ds))))
+
 (defn grade
   "Marks per note (:perfect inside half the window, :good inside it, :missed), extra taps, the fit,
-   a 0–1 score and timing figures (mean and spread of the errors, in seconds)."
+   a 0–1 score and timing figures in seconds (mean and spread of the errors, `long-gaps`)."
   [{:keys [expected taps anchored? relaxed? beat-s tolerance]}]
   (let [expected (vec expected)
         taps (vec (sort taps))
@@ -127,4 +139,5 @@
     {:notes notes :taps s-taps :extra extra :windows ws :fit fit
      :n n :perfect (cnt :perfect) :good (cnt :good) :missed (cnt :missed)
      :score score :stars (stars score)
-     :mean (mean errs) :spread (sd errs)}))
+     :mean (mean errs) :spread (sd errs)
+     :gaps (long-gaps expected s-taps pairs beat-s)}))

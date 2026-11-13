@@ -41,7 +41,7 @@
 
 (rf/reg-fx :audio/schedule audio/schedule!)
 (rf/reg-fx :audio/stop (fn [_] (audio/stop-all!)))
-(rf/reg-fx :knock (fn [_] (audio/knock!)))
+(rf/reg-fx :knock #(audio/knock! %))
 (rf/reg-fx :later (fn [items] (doseq [[ms ev] items] (js/setTimeout #(rf/dispatch ev) (max 0 ms)))))
 (rf/reg-fx :save (fn [kvs] (doseq [[k v] kvs] (storage/save! k v))))
 (rf/reg-fx :html-lang (fn [lang] (set! (.. js/document -documentElement -lang) (name lang))))
@@ -219,7 +219,7 @@
           (cond-> {:db (assoc-in db [:run :taps] taps)}
             (not (dive? db)) (assoc :later (cond-> [[(idle-ms db) [:idle token (count taps)]]]
                                              by-count? (conj [400 [:finish token]])))
-            (and (get-in db [:settings :tap-sound]) (not (dive? db))) (assoc :knock nil)))))))
+            (get-in db [:settings :tap-sound]) (assoc :knock (if (dive? db) :tick :wood))))))))
 
 (rf/reg-event-fx :idle
   (fn [{:keys [db]} [_ tok n]]

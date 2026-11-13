@@ -140,7 +140,7 @@
           :else nil)))
 
 (defn result-panel []
-  (let [{:keys [stars msg perfect good missed extra relaxed? anchored? mean fit] :as res} (<sub [:result])
+  (let [{:keys [stars msg perfect good missed extra relaxed? anchored? mean fit gaps] :as res} (<sub [:result])
         s (<sub [:settings])
         {:keys [beats bars]} (<sub [:ex])]
     [:div.result
@@ -159,7 +159,9 @@
      (when relaxed?
        [:p.hint (tr :ui/your-tempo (Math/round (/ (:tempo s) (second fit))) (:tempo s))])
      (when (and anchored? (not relaxed?) mean)
-       [:p.hint (tendency mean)])]))
+       [:p.hint (tendency mean)])
+     (when (and gaps (>= (Math/abs gaps) 0.03))
+       [:p.hint (tr (if (neg? gaps) :ui/rushed-gaps :ui/dragged-gaps) (Math/round (* 1000 (Math/abs gaps))))])]))
 
 
 ;; ---------------------------------------------------------------- exercise

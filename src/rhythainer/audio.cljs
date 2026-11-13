@@ -123,4 +123,22 @@
     (doseq [[t accent?] clicks] (click! (max soon t) accent?))
     (doseq [[t accent?] blocks] (woodblock! (max soon t) accent?))))
 
-(defn knock! [] (woodblock! (+ (now) 0.002) false))
+(defn- tick!
+  "A short high-passed noise burst for taps over a playing rhythm: unlike the woodblock, so a flam is heard."
+  [t]
+  (let [c (context)
+        src (.createBufferSource c)
+        hp (.createBiquadFilter c)
+        g (env! c t 0.5 0.025)]
+    (set! (.-buffer src) (noise-buffer c))
+    (set! (.-type hp) "highpass")
+    (set! (.. hp -frequency -value) 4500)
+    (.connect src hp)
+    (.connect hp g)
+    (.start src t)
+    (.stop src (+ t 0.04))
+    (swap! voices conj [src g])))
+
+(defn knock! [kind]
+  (let [t (+ (now) 0.002)]
+    (if (= kind :tick) (tick! t) (woodblock! t false))))
