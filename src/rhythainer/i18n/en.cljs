@@ -17,12 +17,13 @@
 (def dict
   {:nav {:practice "Practice" :stats "Stats" :settings "Settings"}
 
-   :mode {:listen "Listen" :read "Read" :both "Listen + read" :memory "Memory" :dive "Quick dive"}
+   :mode {:listen "Listen" :read "Read" :both "Listen + read" :memory "Memory" :stream "Continuous reading" :dive "Quick dive"}
 
    :mode-hint {:listen "Listen to a rhythm, then tap it back from memory."
                :read "Read the rhythm, then tap it."
                :both "See and hear the rhythm, then tap it back."
                :memory "Listen and tap it back; each time you manage, the rhythm gets longer. How long can you remember?"
+               :stream "Bars keep coming: read each one and tap it as it goes by, with the next bar already in view."
                :dive "Every pattern of the level in turn: read along and tap with the woodblock."}
 
    :level {:l1 "Quarter notes and quarter rests"
@@ -46,7 +47,23 @@
             :ready-memory (fn [_ n] (str "Press Start, listen to " (if (= n 1) "1 bar" (str n " bars")) ", then tap it back."))
             :listening "Listen…"
             :your-turn "Your turn: tap!"
-            :play-along "Tap along!"}
+            :play-along "Tap along!"
+            :ready-stream "Press Start: after the count-in, read and tap each bar as it comes."
+            :read-on "Read and tap!"}
+
+   :stream {:length "Length (bars)"
+            :endless "Endless"
+            :click "Metronome clicks"
+            :click-hint "Off: after the count-in only the flashing beat helps. Can you keep the pulse yourself?"
+            :bar (fn [_ k n] (if n (str "Bar " k " of " n) (str "Bar " k)))
+            :streak (fn [_ n] (str n " clean in a row"))
+            :best (fn [_ n] (str "Best run: " n))
+            :summary (fn [_ bars clean streak]
+                       (str (n-of bars "bar" "bars") ", " clean " clean (every note, no extra taps), longest clean run " streak "."))
+            :longest (fn [_ n] (str "clean run " n))
+            :lost "Two bars went by without a tap, so I stopped there."
+            :lost-ready "No taps, so I stopped. Press Start when you're ready."
+            :keys-hint "Keyboard: Space or Enter starts. Space (or F, J) taps, Enter or Esc stops."}
 
    :memory {:grow "One bar at a time"
             :span "N bars at once"

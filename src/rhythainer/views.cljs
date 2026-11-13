@@ -49,6 +49,8 @@
 
 ;; ---------------------------------------------------------------- setup
 
+(def mode-order [:listen :read :both :memory :stream :dive])
+
 (defn level-legend [level]
   [:div.legend
    (for [c (rh/level-cells level)]
@@ -59,14 +61,20 @@
 (defn setup []
   (let [s (<sub [:settings])
         dive? (= :dive (:mode s))
-        memory? (= :memory (:mode s))]
+        memory? (= :memory (:mode s))
+        stream? (= :stream (:mode s))]
     [:div.card.setup
-     [seg (vec (for [m [:listen :read :both :memory :dive]] [m (tr (keyword "mode" (name m)))])) (:mode s) (setter :mode)]
+     [seg (vec (for [m mode-order] [m (tr (keyword "mode" (name m)))])) (:mode s) (setter :mode)]
      [:p.hint.mode-hint (tr (keyword "mode-hint" (name (:mode s))))]
      (when memory?
        [field nil
         [seg [[:grow (tr :memory/grow)] [:span (tr :memory/span)]] (:memory-kind s) (setter :memory-kind)]
         [:small.hint (tr (keyword "memory" (str (name (:memory-kind s)) "-hint")))]])
+     (when stream?
+       [:<>
+        [field (tr :stream/length)
+         [seg [[16 "16"] [32 "32"] [:endless (tr :stream/endless)]] (:stream-len s) (setter :stream-len)]]
+        [toggle (tr :stream/click) (:stream-click s) (setter :stream-click) (tr :stream/click-hint)]])
      [field (tr :ui/level)
       [seg (vec (for [l (range 1 (inc rh/max-level))] [l (str l)])) (:level s) (setter :level)]]
      [level-legend (:level s)]
@@ -76,19 +84,21 @@
        [:div.row2
         [field (tr :ui/meter)
          [seg [[2 "2/4"] [3 "3/4"] [4 "4/4"]] (:beats s) (setter :beats)]]
-        (when-not (or dive? memory?)
+        (when-not (or dive? memory? stream?)
           [field (tr :ui/bars)
            [seg [[1 "1"] [2 "2"] [4 "4"]] (:bars s) (setter :bars)]])]
        [slider (tr :ui/tempo) (:tempo s) 40 160 2 (setter :tempo)]
        (when-not dive?
          [:<>
-          [field (tr :ui/timing)
-           [seg [[:strict (tr :ui/strict)] [:relaxed (tr :ui/relaxed)]] (:timing s) (setter :timing)]
-           [:small.hint (tr (if (= :strict (:timing s)) :ui/strict-hint :ui/relaxed-hint))]]
-          [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]
+          (when-not stream?
+            [:<>
+             [field (tr :ui/timing)
+              [seg [[:strict (tr :ui/strict)] [:relaxed (tr :ui/relaxed)]] (:timing s) (setter :timing)]
+              [:small.hint (tr (if (= :strict (:timing s)) :ui/strict-hint :ui/relaxed-hint))]]
+             [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]])
           [toggle (tr :ui/focus) (:focus s) (setter :focus) (tr :ui/focus-hint)]
           [toggle (tr :ui/syl-read) (:syl-read s) (setter :syl-read)]
-          (when-not memory?
+          (when-not (or memory? stream?)
             [field (tr :ui/session-len)
              [seg [[5 "5"] [10 "10"]] (:session-len s) (setter :session-len)]])])]]]))
 
@@ -139,8 +149,19 @@
           (pos? missed) (tr :count/misplaced n)
           :else nil)))
 
+(defn- gaps-line [gaps]
+  (when (and gaps (>= (Math/abs gaps) 0.03))
+    [:p.hint (tr (if (neg? gaps) :ui/rushed-gaps :ui/dragged-gaps) (Math/round (* 1000 (Math/abs gaps))))]))
+
+(defn- marks-legend [{:keys [perfect good missed extra]}]
+  [:div.legend-row
+   [:span.k.perfect (tr :ui/perfect perfect)]
+   [:span.k.good (tr :ui/good good)]
+   [:span.k.missed (tr :ui/missed missed)]
+   [:span.k.extra (tr :ui/extra (count extra))]])
+
 (defn result-panel []
-  (let [{:keys [stars msg perfect good missed extra relaxed? anchored? mean fit gaps] :as res} (<sub [:result])
+  (let [{:keys [stars msg relaxed? anchored? mean fit gaps] :as res} (<sub [:result])
         s (<sub [:settings])
         {:keys [beats bars]} (<sub [:ex])]
     [:div.result
@@ -151,17 +172,12 @@
      (when (and (= :memory (:mode (<sub [:session]))) (grade/passed? res))
        [:p.count-line.passed (tr :memory/passed)])
      [timeline {:expected (<sub [:expected]) :result res :beat-s (<sub [:beat-s]) :beats beats :bars (count bars)}]
-     [:div.legend-row
-      [:span.k.perfect (tr :ui/perfect perfect)]
-      [:span.k.good (tr :ui/good good)]
-      [:span.k.missed (tr :ui/missed missed)]
-      [:span.k.extra (tr :ui/extra (count extra))]]
+     [marks-legend res]
      (when relaxed?
        [:p.hint (tr :ui/your-tempo (Math/round (/ (:tempo s) (second fit))) (:tempo s))])
      (when (and anchored? (not relaxed?) mean)
        [:p.hint (tendency mean)])
-     (when (and gaps (>= (Math/abs gaps) 0.03))
-       [:p.hint (tr (if (neg? gaps) :ui/rushed-gaps :ui/dragged-gaps) (Math/round (* 1000 (Math/abs gaps))))])]))
+     [gaps-line gaps]]))
 
 
 ;; ---------------------------------------------------------------- exercise
@@ -188,7 +204,7 @@
      (cond cnt [:span.count-in cnt]
            (= phase :ready) (tr (keyword "status" (str "ready-" (name mode))) (:len (<sub [:session])))
            (= phase :listening) (tr :status/listening)
-           (= phase :recording) [:b (tr (if (= mode :dive) :status/play-along :status/your-turn))]
+           (= phase :recording) [:b (tr (case mode :dive :status/play-along :stream :status/read-on :status/your-turn))]
            :else nil)]))
 
 (defn exercise-card []
@@ -244,6 +260,84 @@
         nil)]
      (when-not busy? [:p.hint.keys-hint (tr :ui/keys-hint)])]))
 
+(defn- beat-dots
+  "The pulse on screen, for when the metronome is off or hard to hear."
+  []
+  (let [j (<sub [:beat])]
+    [:div.beat-dots
+     (for [i (range (:beats (<sub [:ex])))]
+       ^{:key i} [:span {:class [(when (zero? i) "down") (when (= i j) "on")]}])]))
+
+(defn- stream-score
+  "The bar being played, the next one to read ahead and, when there is room, the one just graded.
+   On a narrow screen the next bar goes underneath."
+  []
+  (let [s (<sub [:settings])
+        {:keys [bars beats]} (<sub [:ex])
+        {:keys [k results]} (<sub [:stream])
+        natural (apply max (map notation/bar-width bars))
+        per-row (cond (>= (avail) (+ 40 (* 3 natural))) 3 (>= (avail) (+ 40 (* 2 natural))) 2 :else 1)
+        lo (if (= per-row 3) (max 0 (dec k)) k)
+        hi (min (inc k) (dec (count bars)))
+        marks (into {} (for [b (range lo k)
+                             [h nt] (map vector (rh/hits [(bars b)] beats) (:notes (get results b)))]
+                         [[b (:i h)] (name (:mark nt))]))
+        len (ev/stream-len {:settings s})
+        props {:beats beats :tsig true :cur k
+               :bar-w (max natural (quot (- (avail) 40) per-row))
+               :cls (fn [[b i]] (cond (< b k) (str "past " (marks [b i])) (> b k) "ahead"))
+               :syl (when (and (:syl-read s) (not= :none (:syllables s)))
+                      (fn [[b i]] (get (rh/syllables (:syllables s) (bars b)) i)))}]
+    [:div.systems
+     (for [from (if (= per-row 1) (range lo (inc hi)) [lo])
+           :let [to (if (= per-row 1) from hi)]]
+       ^{:key from}
+       [notation/system (assoc props :bars (subvec bars from (inc to)) :from from
+                               :final? (and len (= to (dec len))))])]))
+
+(defn- stream-result []
+  (let [{:keys [stars msg mean gaps lost? bars clean streak record? bar-stars] :as res} (<sub [:result])]
+    [:div.result
+     [:div.cheer {:class (str "s" stars)}
+      [star-row stars]
+      [:b (tr :cheer/attempt stars msg)]]
+     (when lost? [:p.count-line (tr :stream/lost)])
+     [:p.count-line (tr :stream/summary bars clean streak)]
+     (when record? [:div.record (tr :ui/new-record)])
+     [:div.bar-pips (for [[i st] (map-indexed vector bar-stars)] ^{:key i} [:span.pip {:class (str "s" st)}])]
+     [marks-legend res]
+     (when mean [:p.hint (tendency mean)])
+     [gaps-line gaps]]))
+
+(defn stream-card []
+  (let [{:keys [phase token]} (<sub [:run])
+        {:keys [k streak best lost?]} (<sub [:stream])
+        len (ev/stream-len {:settings (<sub [:settings])})
+        busy? (= phase :recording)]
+    [:div.card.exercise
+     (when busy?
+       [:div.memory-head
+        [:b (tr :stream/bar (inc k) len)]
+        ^{:key streak} [:span.streak {:class (when (and (pos? streak) (zero? (mod streak 8))) "milestone")}
+                        (tr :stream/streak streak)]
+        [:span.hint (tr :stream/best best)]])
+     (if (and (= phase :ready) lost?)
+       [:div.status (tr :stream/lost-ready)]
+       [status])
+     (when busy? [beat-dots])
+     (if (= phase :done)
+       [stream-result]
+       [:div.score-wrap [stream-score]])
+     (when-not (= phase :done)
+       [tap-pad busy? (tr :ui/tap)])
+     [:div.actions
+      (case phase
+        :ready [:button.primary.big {:on-click #(>evt [:start])} (tr :ui/start)]
+        :recording [:button {:on-click #(>evt [:stream/end token])} (tr :ui/stop)]
+        :done [:button.primary {:on-click #(>evt [:again])} (tr :ui/again)]
+        nil)]
+     (when-not busy? [:p.hint.keys-hint (tr :stream/keys-hint)])]))
+
 (defn summary-card []
   (let [{:keys [summary mode level kind]} (<sub [:session])
         {:keys [score stars msg record? best]} summary]
@@ -262,7 +356,7 @@
    [setup]
    (if (:summary (<sub [:session]))
      [summary-card]
-     [exercise-card])])
+     (if (= :stream (:mode (<sub [:session]))) [stream-card] [exercise-card]))])
 
 ;; ---------------------------------------------------------------- stats
 
@@ -287,7 +381,7 @@
         [:h3 (tr :stats/overview)]
         [:table.stats
          [:tbody
-          (for [m [:listen :read :both :memory :dive] :let [{:keys [n] st :stars} (modes m)] :when n]
+          (for [m mode-order :let [{:keys [n] st :stars} (modes m)] :when n]
             ^{:key m}
             [:tr [:td (tr (keyword "mode" (name m)))] [:td.num (tr :stats/attempts n)]
              [:td [star-row (Math/round st)]]])]]]
@@ -313,11 +407,12 @@
         [:div.card
         [:h3 (tr :stats/sessions)]
         [:ul.sessions
-         (for [{:keys [t mode level score best]} (reverse (take-last 10 sessions))]
+         (for [{:keys [t mode level score best streak]} (reverse (take-last 10 sessions))]
            ^{:key t}
            [:li [star-row (if best (grade/memory-stars best) (grade/stars score))]
             [:span (tr (keyword "mode" (name mode))) " · " (tr :ui/level) " " level
-             (when best (str " · " (tr :memory/longest best)))]
+             (when best (str " · " (tr :memory/longest best)))
+             (when streak (str " · " (tr :stream/longest streak)))]
             [:small.hint (.toLocaleDateString (js/Date. t))]])]])
        [:div.actions [reset-button]]])))
 

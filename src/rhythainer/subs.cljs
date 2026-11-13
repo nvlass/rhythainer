@@ -3,7 +3,7 @@
             [rhythainer.events :as ev]
             [rhythainer.i18n :as i18n]))
 
-(doseq [k [:view :settings :attempts :sessions :session :ex :run :result :calib :hl :count :width]]
+(doseq [k [:view :settings :attempts :sessions :session :ex :run :result :calib :hl :count :beat :stream :width]]
   (rf/reg-sub k (fn [db _] (k db))))
 
 (rf/reg-sub :loc :<- [:settings] (fn [s _] (i18n/locale (:lang s))))

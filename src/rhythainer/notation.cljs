@@ -116,8 +116,8 @@
 
 (defn system
   "Bars with a time signature when `tsig` is set. `cls` maps [bar i] to a class, `syl` to a syllable;
-   `from` numbers the first bar."
-  [{:keys [bars beats bar-w tsig final? from cls syl] :or {from 0}}]
+   `from` numbers the first bar, `cur` is a bar number to shade."
+  [{:keys [bars beats bar-w tsig final? from cls syl cur] :or {from 0}}]
   (let [cls (or cls (constantly nil))
         syl (or syl (constantly nil))
         x0 (if tsig 34 4)
@@ -135,6 +135,7 @@
                  last? (and final? (= k (dec (count bars))))]]
        ^{:key k}
        [:g
+        (when (= b cur) [:rect.cur-bar {:x bx :y 4 :width bar-w :height (- height 8) :rx 6}])
         [:g {:transform (str "translate(" bx ",0)")}
          (voice bar xs #(cls [b %]) #(syl [b %]))]
         [:line {:class (if last? "bar final" "bar")

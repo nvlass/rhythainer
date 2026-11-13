@@ -68,3 +68,30 @@
     (is (< -0.07 (:gaps rushed) -0.05))
     (is (pos? (:missed rushed)) "the late taps fall outside their windows, the gaps still count")
     (is (nil? (:gaps (run expected))) "no gap longer than a beat")))
+
+(deftest bar-taps-split-halfway-between-bars
+  (let [taps [-0.1 0.05 0.55 1.1 1.3 1.75]]
+    (is (= [-0.1 0.05 0.55] (g/bar-taps taps nil [0 0.6] 1.2)) "a first bar takes everything before it")
+    (is (= [1.1 1.3] (g/bar-taps taps 0.6 [1.2 1.5] 1.8)) "an early tap for the next bar goes with it")
+    (is (= [1.1 1.3 1.75] (g/bar-taps taps 0.6 [1.2 1.5] nil)) "a last bar takes everything after it")))
+
+(deftest combining-bars-matches-their-sum
+  (let [bar1 [0 0.6 1.2 1.8]
+        bar2 [2.4 3.0 3.6]
+        r1 (run [0.01 0.6 1.0 1.25 1.8] :expected bar1)
+        r2 (run [2.42 3.6] :expected bar2)
+        c (g/combine [r1 r2] beat)]
+    (is (= 7 (:n c)))
+    (is (= (+ (:perfect r1) (:perfect r2)) (:perfect c)))
+    (is (= (+ (:missed r1) (:missed r2)) (:missed c)))
+    (is (= (+ (count (:extra r1)) (count (:extra r2))) (count (:extra c))))
+    (is (= 2.42 ((:taps c) (:tap ((:notes c) 4)))) "tap indices point into the joined taps")
+    (is (= (count (:extra r1)) (count (filter #(< % 5) (:extra c)))))
+    (is (not (g/clean? r2)) "a missed note isn't clean")))
+
+(deftest a-miss-and-a-distant-extra-dont-look-like-rushing
+  (let [q-rest [0 1.2 2.4 3.6 4.8 6.0]
+        r (run [0 2.4 3.6 4.8 5.0 6.0] :expected q-rest)]
+    (is (= 1 (:missed r)))
+    (is (= 1 (count (:extra r))))
+    (is (< (Math/abs (:gaps r)) 1e-9))))

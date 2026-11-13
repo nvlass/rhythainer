@@ -21,10 +21,12 @@
    :syl-read false
    :session-len 5
    :memory-kind :grow
+   :stream-len 16
+   :stream-click true
    :tap-sound true
    :latency 0})
 
-(def session-settings #{:mode :level :focus :beats :bars :session-len :memory-kind})
+(def session-settings #{:mode :level :focus :beats :bars :session-len :memory-kind :stream-len :stream-click})
 
 (def memory-tries 2)
 (def memory-cap {:grow 16 :span 8})
@@ -51,8 +53,13 @@
 (defn beat-s [db] (/ 60 (get-in db [:settings :tempo])))
 (defn mode [db] (get-in db [:session :mode]))
 (defn dive? [db] (= :dive (mode db)))
-(defn lead-in? [db] (or (dive? db) (get-in db [:settings :lead-in])))
-(defn relaxed? [db] (and (not (dive? db)) (= :relaxed (get-in db [:settings :timing]))))
+(defn stream? [db] (= :stream (mode db)))
+(defn along?
+  "Modes where the student taps while time runs on, with the downbeat fixed by the count-in."
+  [db]
+  (or (dive? db) (stream? db)))
+(defn lead-in? [db] (or (along? db) (get-in db [:settings :lead-in])))
+(defn relaxed? [db] (and (not (along? db)) (= :relaxed (get-in db [:settings :timing]))))
 
 (defn hits [db] (rh/hits (get-in db [:ex :bars]) (get-in db [:ex :beats])))
 
@@ -61,6 +68,16 @@
   [db]
   (let [k (/ (beat-s db) rh/per-beat)]
     (mapv #(* k (:at %)) (hits db))))
+
+(defn bar-s [db] (* (beat-s db) (get-in db [:ex :beats])))
+
+(defn bar-onsets
+  "Onsets of bar `k` in seconds from the first downbeat."
+  [db k]
+  (let [sec (/ (beat-s db) rh/per-beat)]
+    (mapv #(+ (* k (bar-s db)) (* sec (:at %))) (rh/hits [(get-in db [:ex :bars k])] (get-in db [:ex :beats])))))
+
+(defn stream-len [db] (let [l (get-in db [:settings :stream-len])] (when (number? l) l)))
 
 (defn total-s [db] (* (beat-s db) (get-in db [:ex :beats]) (count (get-in db [:ex :bars]))))
 
@@ -75,20 +92,24 @@
 
 ;; ---------------------------------------------------------------- sessions
 
-(defn- load-ex [db]
+(defn- another-bar [db first?]
+  (let [{:keys [beats level focus]} (:settings db)]
+    (rh/gen-bar rand beats level focus first?)))
+
+(defn- load-ex
+  "A stream starts with the bar to play and the one to read ahead; `:stream/bar` adds the rest as it goes."
+  [db]
   (let [{:keys [mode k items kind len grown]} (:session db)
         s (:settings db)]
     (assoc db
            :ex {:bars (cond items (items k)
                             (= mode :memory) (if (= kind :grow) grown (rh/exercise rand (assoc s :bars len)))
+                            (= mode :stream) [(another-bar db true) (another-bar db false)]
                             :else (rh/exercise rand s))
                 :beats (:beats s)}
            :run {:token (inc (get-in db [:run :token])) :phase :ready}
-           :hl nil :count nil :result nil)))
-
-(defn- another-bar [db first?]
-  (let [{:keys [beats level focus]} (:settings db)]
-    (rh/gen-bar rand beats level focus first?)))
+           :stream {:k 0 :results [] :streak 0 :best 0 :silent 0}
+           :hl nil :count nil :beat nil :result nil)))
 
 (defn- new-session
   "Memory mode has no fixed length: `:len` grows while the student keeps up, `:tries` are left at
@@ -99,7 +120,7 @@
         memory? (= :memory (:mode s))]
     (-> db
         (assoc :session (cond-> {:mode (:mode s) :level (:level s) :k 0 :items items :scores {}
-                                 :n (cond items (count items) memory? nil :else (:session-len s))}
+                                 :n (cond items (count items) (#{:memory :stream} (:mode s)) nil :else (:session-len s))}
                           memory? (assoc :kind (:memory-kind s) :len 1 :tries memory-tries :best 0
                                          :grown (when (= :grow (:memory-kind s)) [(another-bar db true)]))))
         load-ex)))
@@ -151,6 +172,15 @@
      :later (concat (for [h hs] [(ms (- (+ t0 (* k (:at h))) now)) [:hl tok [(:bar h) (:i h)]]])
                     [[(ms (- (+ t0 (total-s db)) now)) [:hl tok nil]]])}))
 
+(defn- pulse-fx
+  "A bar of beats from `t`: shown on screen, and heard unless the metronome is off."
+  [db tok t now]
+  (let [b (beat-s db)
+        ts (for [j (range (get-in db [:ex :beats]))] [j (+ t (* j b))])]
+    {:clicks (when (get-in db [:settings :stream-click]) (for [[j u] ts] [u (zero? j)]))
+     :later (for [[j u] ts] [(ms (- u now)) [:beat tok j]])}))
+
+(rf/reg-event-db :beat (fn [db [_ tok j]] (if (= tok (get-in db [:run :token])) (assoc db :beat j) db)))
 (rf/reg-event-db :hl (fn [db [_ tok x]] (if (= tok (get-in db [:run :token])) (assoc db :hl x) db)))
 (rf/reg-event-db :count (fn [db [_ tok x]] (if (= tok (get-in db [:run :token])) (assoc db :count x) db)))
 
@@ -175,6 +205,10 @@
             sched {:clicks (:clicks c) :blocks (:blocks p)}]
         (case (mode db)
           :read {:dispatch [:turn tok]}
+          :stream (let [p (pulse-fx db tok t0 now)]
+                    {:db (assoc db :run {:token tok :phase :recording :t0 t0 :taps []})
+                     :audio/schedule {:clicks (concat (:clicks c) (:clicks p))}
+                     :later (concat (:later c) (:later p) [[(ms (- t0 now)) [:stream/bar tok 0]]])})
           :dive {:db (assoc db :run {:token tok :phase :recording :t0 t0 :taps []})
                  :audio/schedule sched
                  :later (concat (:later c) (:later p) [[(ms (- (deadline db t0) now)) [:finish tok]]])}
@@ -215,9 +249,9 @@
              (or (empty? taps) (> (- t (peek taps)) 0.06)))
         (let [taps (conj taps t)
               ;; With a fixed downbeat the deadline ends the turn; otherwise the last expected tap does.
-              by-count? (and (not (dive? db)) (or (nil? t0) (relaxed? db)) (>= (count taps) (count (expected db))))]
+              by-count? (and (not (along? db)) (or (nil? t0) (relaxed? db)) (>= (count taps) (count (expected db))))]
           (cond-> {:db (assoc-in db [:run :taps] taps)}
-            (not (dive? db)) (assoc :later (cond-> [[(idle-ms db) [:idle token (count taps)]]]
+            (not (along? db)) (assoc :later (cond-> [[(idle-ms db) [:idle token (count taps)]]]
                                              by-count? (conj [400 [:finish token]])))
             (get-in db [:settings :tap-sound]) (assoc :knock (if (dive? db) :tick :wood))))))))
 
@@ -263,12 +297,20 @@
 
 (rf/reg-event-fx :stop
   (fn [{:keys [db]} _]
-    {:db (-> db (update-in [:run :token] inc) (assoc-in [:run :phase] :ready) (assoc :hl nil :count nil))
-     :audio/stop nil}))
+    (if (and (stream? db) (= :recording (get-in db [:run :phase])))
+      {:dispatch [:stream/end (get-in db [:run :token])]}
+      {:db (-> db (update-in [:run :token] inc) (assoc-in [:run :phase] :ready) (assoc :hl nil :count nil :beat nil))
+       :audio/stop nil})))
+
+(rf/reg-event-fx :hidden
+  (fn [{:keys [db]} _]
+    (when (#{:listening :recording} (get-in db [:run :phase])) {:dispatch [:stop]})))
 
 (rf/reg-event-fx :again
   (fn [{:keys [db]} _]
-    {:db (-> db (update-in [:run :token] inc) (assoc-in [:run :phase] :ready) (assoc :result nil :hl nil))
+    {:db (if (stream? db)
+           (load-ex db)
+           (-> db (update-in [:run :token] inc) (assoc-in [:run :phase] :ready) (assoc :result nil :hl nil)))
      :dispatch [:start]}))
 
 (rf/reg-event-fx :hear
@@ -331,11 +373,93 @@
 (rf/reg-event-fx :next
   (fn [{:keys [db]} _]
     (let [{:keys [mode k n]} (:session db)]
-      (cond-> (cond (= mode :memory) (let [step (memory-step db) db (memory-next db)]
+      (cond-> (cond (= mode :stream) {:db (load-ex db)}
+                    (= mode :memory) (let [step (memory-step db) db (memory-next db)]
                                        (if (= step :end) (finish-memory db) {:db db}))
                     (< (inc k) n) {:db (load-ex (assoc-in db [:session :k] (inc k)))}
                     :else (finish-session db))
         true (assoc :audio/stop nil)))))
+
+(rf/reg-event-fx :stream/bar
+  [(rf/inject-cofx :now)]
+  (fn [{:keys [db now]} [_ tok k]]
+    (let [{:keys [token phase t0]} (:run db)]
+      (when (and (= tok token) (= phase :recording))
+        (let [len (stream-len db)
+              last? (and len (= k (dec len)))
+              db (cond-> (assoc-in db [:stream :k] k)
+                   (or (nil? len) (< (+ k 2) len)) (update-in [:ex :bars] conj (another-bar db false)))
+              start (+ t0 (* (inc k) (bar-s db)))
+              ;; A bar is graded once its last note's taps can't still come: halfway to the next bar's first.
+              hi (if last?
+                   (+ t0 (* (inc k) (bar-s db)) (* 0.5 (beat-s db)))
+                   (+ t0 (/ (+ (peek (bar-onsets db k)) (first (bar-onsets db (inc k)))) 2)))
+              grade-later [(ms (- (+ hi 0.15) now)) [:stream/grade tok k]]]
+          (if last?
+            {:db db :later [grade-later]}
+            (let [p (pulse-fx db tok start now)]
+              {:db db
+               :audio/schedule {:clicks (:clicks p)}
+               :later (concat (:later p) [grade-later [(ms (- start now)) [:stream/bar tok (inc k)]]])})))))))
+
+(def stream-silence
+  "Bars without a tap that end a stream: the student has stopped."
+  2)
+
+(rf/reg-event-fx :stream/grade
+  (fn [{:keys [db]} [_ tok k]]
+    (let [{:keys [token phase t0 taps]} (:run db)
+          {:keys [results streak best silent]} (:stream db)]
+      (when (and (= tok token) (= phase :recording) (= k (count results)))
+        (let [s (:settings db)
+              lat (/ (:latency s) 1000)
+              on (bar-onsets db k)
+              mine (grade/bar-taps (mapv #(- % lat t0) taps)
+                                   (when (pos? k) (peek (bar-onsets db (dec k))))
+                                   on
+                                   (when (get-in db [:ex :bars (inc k)]) (first (bar-onsets db (inc k)))))
+              g (grade/grade {:expected on :taps mine :anchored? true :relaxed? false
+                              :beat-s (beat-s db) :tolerance (:tolerance s)})
+              streak (if (grade/clean? g) (inc streak) 0)
+              silent (if (empty? mine) (inc silent) 0)
+              len (stream-len db)]
+          (cond-> {:db (update db :stream assoc :results (conj results g) :streak streak
+                               :best (max best streak) :silent silent)}
+            (or (>= silent stream-silence) (and len (= k (dec len))))
+            (assoc :dispatch [:stream/end tok])))))))
+
+(rf/reg-event-fx :stream/end
+  (fn [{:keys [db]} [_ tok]]
+    (let [{:keys [token phase]} (:run db)
+          {:keys [silent best]} (:stream db)
+          lost? (>= silent stream-silence)
+          ;; Bars after the student stopped tapping aren't theirs to be graded on.
+          results (cond-> (get-in db [:stream :results]) lost? (->> (drop-last silent) vec))
+          db (-> db (update-in [:run :token] inc) (assoc :hl nil :count nil :beat nil))]
+      (when (and (= tok token) (= phase :recording))
+        (if (empty? results)
+          {:db (-> db (assoc-in [:run :phase] :ready) (assoc-in [:stream :lost?] lost?)) :audio/stop nil}
+          (let [s (:settings db)
+                g (grade/combine results (beat-s db))
+                level (get-in db [:session :level])
+                bars (count results)
+                prev (keep #(when (and (= :stream (:mode %)) (= level (:level %))) (:streak %)) (:sessions db))
+                attempt (merge (select-keys g [:score :stars :n :perfect :good :missed :mean :spread])
+                               {:mode :stream :level level :beats (get-in db [:ex :beats]) :bars bars :tempo (:tempo s)
+                                :timing :strict :anchored true :tolerance (:tolerance s) :extra (count (:extra g))
+                                :streak best :cells (cell-tally (hits db) (:notes g)) :t (js/Date.now)})
+                attempts (vec (take-last 3000 (conj (:attempts db) attempt)))
+                sessions (vec (take-last 500 (conj (:sessions db) {:mode :stream :level level :score (:score g)
+                                                                    :streak best :bars bars :t (js/Date.now)})))]
+            {:db (-> db
+                     (assoc :result (assoc g :msg (rand-int 4) :anchored? true :lost? lost? :bars bars :streak best
+                                           :clean (count (filter grade/clean? results))
+                                           :bar-stars (mapv :stars results)
+                                           :record? (boolean (and (seq prev) (> best (apply max prev)))))
+                            :attempts attempts :sessions sessions)
+                     (assoc-in [:run :phase] :done))
+             :audio/stop nil
+             :save {:attempts attempts :sessions sessions}}))))))
 
 (rf/reg-event-fx :stats/reset
   (fn [{:keys [db]} _]
@@ -390,6 +514,7 @@
           tapping? (or (= :running (get-in db [:calib :phase]))
                        (and (= :practice (:view db)) (= :recording phase)))]
       (cond
+        (and (stream? db) (= :recording phase) (#{"Enter" "Escape"} k)) {:dispatch [:stop]}
         (and tapping? (tap-keys k)) {:dispatch [:tap t]}
         (not= :practice (:view db)) nil
         (not (#{"Enter" " "} k)) nil

@@ -35,6 +35,8 @@
   (storage/load-all! [:settings :attempts :sessions] #(rf/dispatch [:storage/loaded %]))
   (audio/install-unlock!)
   (.addEventListener js/document "keydown" on-key)
+  ;; Hidden tabs throttle timers, and a stream schedules its bars by timer.
+  (.addEventListener js/document "visibilitychange" #(when (.-hidden js/document) (rf/dispatch [:hidden])))
   (.addEventListener js/window "resize" #(rf/dispatch [:resize (.-innerWidth js/window)]))
   (when (and (not ^boolean goog.DEBUG) (.-serviceWorker js/navigator))
     (.register (.-serviceWorker js/navigator) "sw.js"))

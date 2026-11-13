@@ -101,15 +101,33 @@
 
 (defn- long-gaps
   "Mean change, in seconds, of the tapped interval over each gap longer than a beat (rests, long notes):
-   negative when the student rushes through them. Taps pair with notes by order when the counts agree,
-   since a rushed rest pushes taps out of their windows, otherwise by the alignment. Nil under two gaps."
-  [expected s-taps pairs beat-s]
-  (let [at (if (= (count s-taps) (count expected)) s-taps (into {} (for [[i j] pairs] [i (s-taps j)])))
+   negative when the student rushes through them. A rushed rest pushes taps out of their windows, so taps
+   pair with notes by order when the counts agree and every matched tap is already in order (a miss and an
+   extra elsewhere would shift the pairs between them), otherwise by the alignment. Nil under two gaps."
+  [expected s-taps notes beat-s]
+  (let [in-order? (and (= (count s-taps) (count expected))
+                       (every? (fn [[i {:keys [tap]}]] (or (nil? tap) (= i tap))) (map-indexed vector notes)))
+        at (if in-order?
+             s-taps
+             (into {} (keep-indexed (fn [i {:keys [tap]}] (when tap [i (s-taps tap)])) notes)))
         ds (for [i (range 1 (count expected))
                  :let [a (at (dec i)) b (at i) gap (- (expected i) (expected (dec i)))]
                  :when (and a b (> gap (* 1.01 beat-s)))]
              (- (- b a) gap))]
     (when (>= (count ds) 2) (mean ds))))
+
+(defn- tally
+  "Counts, score and timing figures of marked `notes` against `expected` onsets and scored `taps`."
+  [{:keys [expected taps notes extra] :as r} beat-s]
+  (let [cnt #(count (filter (fn [x] (= % (:mark x))) notes))
+        n (count expected)
+        score (if (zero? n) 0 (max 0 (min 1 (/ (- (+ (cnt :perfect) (* 0.7 (cnt :good))) (* 0.5 (count extra))) n))))
+        errs (keep :err notes)]
+    (assoc r
+           :n n :perfect (cnt :perfect) :good (cnt :good) :missed (cnt :missed)
+           :score score :stars (stars score)
+           :mean (mean errs) :spread (sd errs)
+           :gaps (long-gaps expected taps notes beat-s))))
 
 (defn grade
   "Marks per note (:perfect inside half the window, :good inside it, :missed), extra taps, the fit,
@@ -130,14 +148,30 @@
                      (if-let [j (matched i)]
                        (let [err (- (s-taps j) (expected i))]
                          {:err err :tap j :mark (if (<= (Math/abs err) (/ (ws i) 2)) :perfect :good)})
-                       {:mark :missed})))
-        extra (vec (remove used (range (count taps))))
-        cnt #(count (filter (fn [x] (= % (:mark x))) notes))
-        n (count expected)
-        score (if (zero? n) 0 (max 0 (min 1 (/ (- (+ (cnt :perfect) (* 0.7 (cnt :good))) (* 0.5 (count extra))) n))))
-        errs (keep :err notes)]
-    {:notes notes :taps s-taps :extra extra :windows ws :fit fit
-     :n n :perfect (cnt :perfect) :good (cnt :good) :missed (cnt :missed)
-     :score score :stars (stars score)
-     :mean (mean errs) :spread (sd errs)
-     :gaps (long-gaps expected s-taps pairs beat-s)}))
+                       {:mark :missed})))]
+    (tally {:expected expected :notes notes :taps s-taps :extra (vec (remove used (range (count taps))))
+            :windows ws :fit fit}
+           beat-s)))
+
+(defn bar-taps
+  "The taps that belong to a bar with onsets `on`: from halfway back to `prev`, the previous bar's last onset,
+   to halfway on to `next`, the next bar's first (either may be nil)."
+  [taps prev on next]
+  (let [lo (if prev (/ (+ prev (first on)) 2) ##-Inf)
+        hi (if next (/ (+ (peek on) next) 2) ##Inf)]
+    (filterv #(and (>= % lo) (< % hi)) taps)))
+
+(defn combine
+  "One result from results graded one after another (each bar of a stream), on the same clock."
+  [rs beat-s]
+  (let [offs (reductions + 0 (map (comp count :taps) rs))
+        shift (fn [k r] (map #(+ % (nth offs k)) (:extra r)))]
+    (tally {:expected (vec (mapcat :expected rs))
+            :taps (vec (mapcat :taps rs))
+            :windows (vec (mapcat :windows rs))
+            :notes (vec (mapcat (fn [k r] (map #(cond-> % (:tap %) (update :tap + (nth offs k))) (:notes r)))
+                                (range) rs))
+            :extra (vec (mapcat shift (range) rs))}
+           beat-s)))
+
+(defn clean? [{:keys [missed extra]}] (and (zero? missed) (empty? extra)))
