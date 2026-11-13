@@ -205,7 +205,10 @@
         (= :running (get-in db [:calib :phase]))
         {:db (update-in db [:calib :taps] conj t)}
 
-        (and (= phase :recording) (or (nil? t0) (> t (- t0 (* 0.5 (beat-s db))))))
+        ;; A second tap within 60 ms is a bounce, not a note (a 16th at 160 bpm is 94 ms).
+        (and (= phase :recording)
+             (or (nil? t0) (> t (- t0 (* 0.5 (beat-s db)))))
+             (or (empty? taps) (> (- t (peek taps)) 0.06)))
         (let [taps (conj taps t)
               ;; With a fixed downbeat the deadline ends the turn; otherwise the last expected tap does.
               by-count? (and (not (dive? db)) (or (nil? t0) (relaxed? db)) (>= (count taps) (count (expected db))))]
@@ -305,14 +308,14 @@
   "What Next does in memory mode: :longer after a pass, :retry with a try left, :end otherwise."
   [{:keys [session result]}]
   (let [{:keys [kind len tries]} session]
-    (cond (and (grade/passed? (:stars result)) (< len (memory-cap kind))) :longer
-          (grade/passed? (:stars result)) :end
+    (cond (and (grade/passed? result) (< len (memory-cap kind))) :longer
+          (grade/passed? result) :end
           (> tries 1) :retry
           :else :end)))
 
 (defn- memory-next [db]
   (let [{:keys [kind len best]} (:session db)
-        passed? (grade/passed? (get-in db [:result :stars]))
+        passed? (grade/passed? (:result db))
         db (cond-> (update-in db [:session :k] inc)
              passed? (assoc-in [:session :best] (max best len)))]
     (case (memory-step db)

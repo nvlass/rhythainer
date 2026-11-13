@@ -89,9 +89,10 @@
   (cond (>= score 0.9) 3 (>= score 0.7) 2 (>= score 0.45) 1 :else 0))
 
 (defn passed?
-  "Good enough to move on in memory mode."
-  [stars]
-  (>= stars 2))
+  "Good enough to move on in memory mode: every tap landed on a note and at most a quarter of the notes
+   are missing. Forgetting a note is forgiven more than tapping in the wrong place."
+  [{:keys [n missed extra]}]
+  (and (empty? extra) (<= (* 4 missed) n)))
 
 (defn memory-stars
   "Stars for the longest length (bars) held in memory mode."

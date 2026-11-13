@@ -130,6 +130,15 @@
           (neg? m) (tr :ui/early (- m))
           :else (tr :ui/late m))))
 
+(defn- count-line
+  "How many taps against how many notes, said playfully; nothing when every note was hit."
+  [{:keys [n taps missed]}]
+  (let [k (count taps)]
+    (cond (< k n) (tr :count/fewer n k)
+          (> k n) (tr :count/more n k)
+          (pos? missed) (tr :count/misplaced n)
+          :else nil)))
+
 (defn result-panel []
   (let [{:keys [stars msg perfect good missed extra relaxed? anchored? mean fit] :as res} (<sub [:result])
         s (<sub [:settings])
@@ -138,6 +147,9 @@
      [:div.cheer {:class (str "s" stars)}
       [star-row stars]
       [:b (tr :cheer/attempt stars msg)]]
+     (when-let [line (count-line res)] [:p.count-line line])
+     (when (and (= :memory (:mode (<sub [:session]))) (grade/passed? res))
+       [:p.count-line.passed (tr :memory/passed)])
      [timeline {:expected (<sub [:expected]) :result res :beat-s (<sub [:beat-s]) :beats beats :bars (count bars)}]
      [:div.legend-row
       [:span.k.perfect (tr :ui/perfect perfect)]

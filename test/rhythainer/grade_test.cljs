@@ -54,3 +54,8 @@
   (let [r (run [])]
     (is (= (count expected) (:missed r)))
     (is (zero? (:score r)))))
+
+(deftest memory-forgives-a-forgotten-note-but-not-a-stray-tap
+  (is (g/passed? (run (butlast expected))) "one of six missing")
+  (is (not (g/passed? (run (take 3 expected)))) "half missing")
+  (is (not (g/passed? (run (sort (conj expected 1.5))))) "one stray tap"))

@@ -56,7 +56,16 @@
             :best (fn [_ n] (str "Best: " n))
             :longer (fn [_ n] (str "Next: " n " bars"))
             :retry "Try again"
+            :passed "You remembered it! 🎉"
             :longest (fn [_ n] (str "Longest: " n (if (= n 1) " bar" " bars")))}
+
+   :count {:fewer (fn [_ n k] (if (zero? k)
+                                (str "There were " n " notes, but I didn't hear a single tap! Is the pad asleep? 😴")
+                                (str "There were " n " notes, but I only heard " k ". "
+                                     (if (= 1 (- n k)) "One got away! 👂" "A few got away! 👂"))))
+           :more (fn [_ n k] (str "I heard " k " taps, but there " (if (= n 1) "was only 1 note" (str "were only " n " notes"))
+                                  ". Some extra ones sneaked in! 🐾"))
+           :misplaced (fn [_ n] (str n " notes, " n " taps: right count! But some landed in the wrong place. 🎯"))}
 
    :cheer {:attempt (fn [_ stars k] (get-in cheers [stars k]))
            :session (fn [_ stars k] (get-in session-cheers [stars k]))}

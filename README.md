@@ -9,7 +9,7 @@ Sibling of [Chord Trainer](https://github.com/nvlass/chordtrainer), [Counterpoin
 - **Listen**: a rhythm plays on a woodblock (after an optional bar of count-in), then you tap it back from memory. The notation is shown afterwards.
 - **Read**: the rhythm is shown; press Start and tap it.
 - **Listen + read**: both, with the notes lighting up as they play.
-- **Memory**: listen and tap it back; after each success the rhythm gets a bar longer. *One bar at a time* keeps extending the same rhythm; *N bars at once* plays a new rhythm of the new length each time. Two tries per length; the round ends with the longest length you held.
+- **Memory**: listen and tap it back; after each success the rhythm gets a bar longer. *One bar at a time* keeps extending the same rhythm; *N bars at once* plays a new rhythm of the new length each time. A try passes when every tap lands on a note and no more than a quarter of the notes are missing: forgetting a note is forgiven more than tapping in the wrong place. Two tries per length; the round ends with the longest length you held.
 - **Quick dive**: every pattern of the level in turn, with rhythm syllables under the notes. Tap along while it plays.
 
 Tap the big pad, or press Space / F / J. A round is 5 or 10 exercises (quick dive: one per pattern) and ends with stars and a cheer.

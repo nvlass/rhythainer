@@ -331,3 +331,5 @@ ul.sessions li .hint { margin-left: auto; }
 .memory-head .hint { margin-left: auto; }
 .tries span { color: var(--line); font-size: 1.1rem; }
 .tries span.on { color: var(--bad); }
+.count-line { margin: 4px 2px 8px; font-weight: 600; color: var(--ink-2); }
+.count-line.passed { color: var(--good); }

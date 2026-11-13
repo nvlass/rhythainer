@@ -21,3 +21,9 @@
       (is (string? (i18n/t loc :cheer/session s k))))
     (doseq [l (range 1 (inc rh/max-level))]
       (is (string? (i18n/t loc (keyword "level" (str "l" l))))))))
+
+(deftest count-lines-exist
+  (doseq [lang [:en :el] :let [loc (i18n/locale lang)] n [1 2 8] k [0 1 7 9 12]]
+    (is (string? (i18n/t loc :count/fewer n k)))
+    (is (string? (i18n/t loc :count/more n k)))
+    (is (string? (i18n/t loc :count/misplaced n)))))
