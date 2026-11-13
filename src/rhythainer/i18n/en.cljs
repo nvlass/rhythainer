@@ -134,7 +134,7 @@
     :tap-sound "Sound on tap"
     :tap-sound-hint "a woodblock knock for every tap; in quick dive a short tick instead, so you hear whether you land with the rhythm"
     :latency "Tap delay correction (ms)"
-    :latency-hint "Bluetooth headphones and some devices play sound late. Calibrate: tap along with 12 clicks."
+    :latency-hint "Bluetooth headphones and some devices play sound late. Calibrate: after a countdown of 4, tap along with 8 clicks."
     :tap-along "Tap along with the clicks"
     :calibrate "Calibrate"
     :calib-ok (fn [_ ms] (str "Set to " ms " ms."))

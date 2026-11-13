@@ -474,6 +474,9 @@
 
 (def calib-clicks 12)
 (def calib-beat 0.6)
+(def calib-lead
+  "Clicks counted down before the ones that are measured."
+  4)
 
 (rf/reg-event-fx :calib/start
   [(rf/inject-cofx :now)]
@@ -481,19 +484,24 @@
     (let [tok (inc (get-in db [:calib :token] 0))
           t (+ now 0.4)
           clicks (for [k (range calib-clicks)] [(+ t (* k calib-beat)) (zero? (mod k 4))])]
-      {:db (assoc db :calib {:token tok :phase :running :clicks (mapv first clicks) :taps []})
+      {:db (assoc db :calib {:token tok :phase :running :clicks (mapv first clicks) :taps [] :count nil})
        :audio/schedule {:clicks clicks}
-       :later [[(ms (- (+ t (* calib-clicks calib-beat) 0.3) now)) [:calib/finish tok]]]})))
+       :later (concat (for [k (range (inc calib-lead))]
+                        [(ms (- (+ t (* k calib-beat)) now)) [:calib/count tok (when (< k calib-lead) (- calib-lead k))]])
+                      [[(ms (- (+ t (* calib-clicks calib-beat) 0.3) now)) [:calib/finish tok]]])})))
+
+(rf/reg-event-db :calib/count
+  (fn [db [_ tok n]] (if (= tok (get-in db [:calib :token])) (assoc-in db [:calib :count] n) db)))
 
 (rf/reg-event-fx :calib/finish
   (fn [{:keys [db]} [_ tok]]
     (let [{:keys [token phase clicks taps]} (:calib db)]
       (when (and (= tok token) (= phase :running))
-        ;; The first bar is for finding the beat; after that, each tap against its nearest click.
+        ;; The countdown is for finding the beat; after it, each tap against its nearest click.
         (let [diffs (for [t taps
                           :let [c (apply min-key #(Math/abs (- t %)) clicks)
                                 d (- t c)]
-                          :when (>= c (clicks 4))
+                          :when (>= c (clicks calib-lead))
                           :when (< (Math/abs d) 0.25)]
                       d)]
           (if (>= (count diffs) 5)

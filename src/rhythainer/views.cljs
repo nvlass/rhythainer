@@ -419,13 +419,15 @@
 ;; ---------------------------------------------------------------- settings
 
 (defn calibration []
-  (let [{:keys [phase result]} (<sub [:calib])
+  (let [{:keys [phase result] n :count} (<sub [:calib])
         s (<sub [:settings])]
     [:div.calib
      [slider (tr :ui/latency) (:latency s) -100 300 5 (setter :latency)]
      [:small.hint (tr :ui/latency-hint)]
      (if (= phase :running)
-       [tap-pad true (tr :ui/tap-along)]
+       [:<>
+        [:div.status (if n [:span.count-in {:key n} n] [:b (tr :ui/tap-along)])]
+        [tap-pad true (tr :ui/tap)]]
        [:div.actions
         [:button {:on-click #(>evt [:calib/start])} (tr :ui/calibrate)]
         (case phase
