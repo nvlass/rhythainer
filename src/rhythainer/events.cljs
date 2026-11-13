@@ -20,10 +20,14 @@
    :syllables :takadimi
    :syl-read false
    :session-len 5
+   :memory-kind :grow
    :tap-sound true
    :latency 0})
 
-(def session-settings #{:mode :level :focus :beats :bars :session-len})
+(def session-settings #{:mode :level :focus :beats :bars :session-len :memory-kind})
+
+(def memory-tries 2)
+(def memory-cap {:grow 16 :span 8})
 
 (def initial-db
   {:view :practice
@@ -72,19 +76,32 @@
 ;; ---------------------------------------------------------------- sessions
 
 (defn- load-ex [db]
-  (let [{:keys [k items]} (:session db)
+  (let [{:keys [mode k items kind len grown]} (:session db)
         s (:settings db)]
     (assoc db
-           :ex {:bars (if items (items k) (rh/exercise rand s)) :beats (:beats s)}
+           :ex {:bars (cond items (items k)
+                            (= mode :memory) (if (= kind :grow) grown (rh/exercise rand (assoc s :bars len)))
+                            :else (rh/exercise rand s))
+                :beats (:beats s)}
            :run {:token (inc (get-in db [:run :token])) :phase :ready}
            :hl nil :count nil :result nil)))
 
-(defn- new-session [db]
+(defn- another-bar [db first?]
+  (let [{:keys [beats level focus]} (:settings db)]
+    (rh/gen-bar rand beats level focus first?)))
+
+(defn- new-session
+  "Memory mode has no fixed length: `:len` grows while the student keeps up, `:tries` are left at
+   that length, `:grown` is the rhythm the one-bar-at-a-time variant keeps extending."
+  [db]
   (let [s (:settings db)
-        items (when (= :dive (:mode s)) (rh/tour (:beats s) (:level s)))]
+        items (when (= :dive (:mode s)) (rh/tour (:beats s) (:level s)))
+        memory? (= :memory (:mode s))]
     (-> db
-        (assoc :session {:mode (:mode s) :level (:level s) :k 0 :items items :scores {}
-                         :n (if items (count items) (:session-len s))})
+        (assoc :session (cond-> {:mode (:mode s) :level (:level s) :k 0 :items items :scores {}
+                                 :n (cond items (count items) memory? nil :else (:session-len s))}
+                          memory? (assoc :kind (:memory-kind s) :len 1 :tries memory-tries :best 0
+                                         :grown (when (= :grow (:memory-kind s)) [(another-bar db true)]))))
         load-ex)))
 
 (rf/reg-event-db :init (fn [_ _] (new-session initial-db)))
@@ -224,7 +241,7 @@
                               :tolerance (:tolerance s)})
               {:keys [mode level k]} (:session db)
               attempt (merge (select-keys g [:score :stars :n :perfect :good :missed :mean :spread])
-                             {:mode mode :level level :beats (get-in db [:ex :beats])
+                             {:mode mode :kind (get-in db [:session :kind]) :level level :beats (get-in db [:ex :beats])
                               :bars (count (get-in db [:ex :bars])) :tempo (:tempo s)
                               :timing (if (relaxed? db) :relaxed :strict) :anchored (some? t0)
                               :tolerance (:tolerance s) :extra (count (:extra g))
@@ -272,12 +289,45 @@
                                             :record? (boolean (and (seq prev) (> avg (apply max prev))))}))
      :save {:sessions sessions}}))
 
+(defn- finish-memory [db]
+  (let [{:keys [kind level best]} (:session db)
+        prev (keep #(when (and (= :memory (:mode %)) (= kind (:kind %)) (= level (:level %))) (:best %))
+                   (:sessions db))
+        sess {:mode :memory :kind kind :level level :best best :t (js/Date.now)}
+        sessions (vec (take-last 500 (conj (:sessions db) sess)))]
+    {:db (-> db
+             (assoc :sessions sessions)
+             (assoc-in [:session :summary] {:best best :stars (grade/memory-stars best) :msg (rand-int 4)
+                                            :record? (boolean (and (seq prev) (> best (apply max prev))))}))
+     :save {:sessions sessions}}))
+
+(defn memory-step
+  "What Next does in memory mode: :longer after a pass, :retry with a try left, :end otherwise."
+  [{:keys [session result]}]
+  (let [{:keys [kind len tries]} session]
+    (cond (and (grade/passed? (:stars result)) (< len (memory-cap kind))) :longer
+          (grade/passed? (:stars result)) :end
+          (> tries 1) :retry
+          :else :end)))
+
+(defn- memory-next [db]
+  (let [{:keys [kind len best]} (:session db)
+        passed? (grade/passed? (get-in db [:result :stars]))
+        db (cond-> (update-in db [:session :k] inc)
+             passed? (assoc-in [:session :best] (max best len)))]
+    (case (memory-step db)
+      :longer (load-ex (update db :session #(cond-> (assoc % :len (inc len) :tries memory-tries)
+                                              (= kind :grow) (update :grown conj (another-bar db false)))))
+      :retry (load-ex (update-in db [:session :tries] dec))
+      :end db)))
+
 (rf/reg-event-fx :next
   (fn [{:keys [db]} _]
-    (let [{:keys [k n]} (:session db)]
-      (cond-> (if (< (inc k) n)
-                {:db (load-ex (assoc-in db [:session :k] (inc k)))}
-                (finish-session db))
+    (let [{:keys [mode k n]} (:session db)]
+      (cond-> (cond (= mode :memory) (let [step (memory-step db) db (memory-next db)]
+                                       (if (= step :end) (finish-memory db) {:db db}))
+                    (< (inc k) n) {:db (load-ex (assoc-in db [:session :k] (inc k)))}
+                    :else (finish-session db))
         true (assoc :audio/stop nil)))))
 
 (rf/reg-event-fx :stats/reset

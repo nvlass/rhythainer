@@ -96,7 +96,9 @@
   (and (some (complement :rest) bar)
        (<= (* 2 (total (filter :rest bar))) (bar-ticks beats))))
 
-(defn- gen-bar [rnd beats level focus first?]
+(defn gen-bar
+  "One bar; `first?` keeps a rest off its first beat."
+  [rnd beats level focus first?]
   (loop [k 0]
     (let [bar (fill rnd beats level focus 0 (bar-ticks beats) first?)]
       (if (or (ok-bar? bar beats) (> k 20)) bar (recur (inc k))))))

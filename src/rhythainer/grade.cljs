@@ -88,6 +88,16 @@
 (defn stars [score]
   (cond (>= score 0.9) 3 (>= score 0.7) 2 (>= score 0.45) 1 :else 0))
 
+(defn passed?
+  "Good enough to move on in memory mode."
+  [stars]
+  (>= stars 2))
+
+(defn memory-stars
+  "Stars for the longest length (bars) held in memory mode."
+  [best]
+  (cond (>= best 6) 3 (>= best 4) 2 (>= best 2) 1 :else 0))
+
 (defn grade
   "Marks per note (:perfect inside half the window, :good inside it, :missed), extra taps, the fit,
    a 0–1 score and timing figures (mean and spread of the errors, in seconds)."

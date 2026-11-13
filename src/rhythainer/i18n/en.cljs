@@ -17,11 +17,12 @@
 (def dict
   {:nav {:practice "Practice" :stats "Stats" :settings "Settings"}
 
-   :mode {:listen "Listen" :read "Read" :both "Listen + read" :dive "Quick dive"}
+   :mode {:listen "Listen" :read "Read" :both "Listen + read" :memory "Memory" :dive "Quick dive"}
 
    :mode-hint {:listen "Listen to a rhythm, then tap it back from memory."
                :read "Read the rhythm, then tap it."
                :both "See and hear the rhythm, then tap it back."
+               :memory "Listen and tap it back; each time you manage, the rhythm gets longer. How long can you remember?"
                :dive "Every pattern of the level in turn: read along and tap with the woodblock."}
 
    :level {:l1 "Quarter notes and quarter rests"
@@ -42,9 +43,20 @@
             :ready-read "Read the rhythm. Press Start, then tap it."
             :ready-both "Press Start, follow the notes, then tap the rhythm back."
             :ready-dive "Press Start and tap along with the woodblock."
+            :ready-memory (fn [_ n] (str "Press Start, listen to " (if (= n 1) "1 bar" (str n " bars")) ", then tap it back."))
             :listening "Listen…"
             :your-turn "Your turn: tap!"
             :play-along "Tap along!"}
+
+   :memory {:grow "One bar at a time"
+            :span "N bars at once"
+            :grow-hint "The same rhythm gets one bar longer after each success."
+            :span-hint "A new rhythm every time, one bar longer after each success."
+            :length (fn [_ n] (str "Length: " n (if (= n 1) " bar" " bars")))
+            :best (fn [_ n] (str "Best: " n))
+            :longer (fn [_ n] (str "Next: " n " bars"))
+            :retry "Try again"
+            :longest (fn [_ n] (str "Longest: " n (if (= n 1) " bar" " bars")))}
 
    :cheer {:attempt (fn [_ stars k] (get-in cheers [stars k]))
            :session (fn [_ stars k] (get-in session-cheers [stars k]))}

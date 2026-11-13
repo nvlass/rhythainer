@@ -11,3 +11,4 @@
 (rf/reg-sub :hits (fn [db _] (ev/hits db)))
 (rf/reg-sub :expected (fn [db _] (ev/expected db)))
 (rf/reg-sub :beat-s (fn [db _] (ev/beat-s db)))
+(rf/reg-sub :memory-step (fn [db _] (ev/memory-step db)))

@@ -326,3 +326,8 @@ ul.sessions li .hint { margin-left: auto; }
 .calib { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.memory-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.memory-head .hint { margin-left: auto; }
+.tries span { color: var(--line); font-size: 1.1rem; }
+.tries span.on { color: var(--bad); }

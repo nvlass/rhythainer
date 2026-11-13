@@ -5,6 +5,7 @@
             [rhythainer.grade :as grade]
             [rhythainer.stats :as stats]
             [rhythainer.audio :as audio]
+            [rhythainer.events :as ev]
             [rhythainer.notation :as notation]
             [rhythainer.i18n :refer [tr]]))
 
@@ -57,10 +58,15 @@
 
 (defn setup []
   (let [s (<sub [:settings])
-        dive? (= :dive (:mode s))]
+        dive? (= :dive (:mode s))
+        memory? (= :memory (:mode s))]
     [:div.card.setup
-     [seg (vec (for [m [:listen :read :both :dive]] [m (tr (keyword "mode" (name m)))])) (:mode s) (setter :mode)]
+     [seg (vec (for [m [:listen :read :both :memory :dive]] [m (tr (keyword "mode" (name m)))])) (:mode s) (setter :mode)]
      [:p.hint.mode-hint (tr (keyword "mode-hint" (name (:mode s))))]
+     (when memory?
+       [field nil
+        [seg [[:grow (tr :memory/grow)] [:span (tr :memory/span)]] (:memory-kind s) (setter :memory-kind)]
+        [:small.hint (tr (keyword "memory" (str (name (:memory-kind s)) "-hint")))]])
      [field (tr :ui/level)
       [seg (vec (for [l (range 1 (inc rh/max-level))] [l (str l)])) (:level s) (setter :level)]]
      [level-legend (:level s)]
@@ -70,7 +76,7 @@
        [:div.row2
         [field (tr :ui/meter)
          [seg [[2 "2/4"] [3 "3/4"] [4 "4/4"]] (:beats s) (setter :beats)]]
-        (when-not dive?
+        (when-not (or dive? memory?)
           [field (tr :ui/bars)
            [seg [[1 "1"] [2 "2"] [4 "4"]] (:bars s) (setter :bars)]])]
        [slider (tr :ui/tempo) (:tempo s) 40 160 2 (setter :tempo)]
@@ -82,8 +88,9 @@
           [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]
           [toggle (tr :ui/focus) (:focus s) (setter :focus) (tr :ui/focus-hint)]
           [toggle (tr :ui/syl-read) (:syl-read s) (setter :syl-read)]
-          [field (tr :ui/session-len)
-           [seg [[5 "5"] [10 "10"]] (:session-len s) (setter :session-len)]]])]]]))
+          (when-not memory?
+            [field (tr :ui/session-len)
+             [seg [[5 "5"] [10 "10"]] (:session-len s) (setter :session-len)]])])]]]))
 
 ;; ---------------------------------------------------------------- feedback
 
@@ -152,13 +159,20 @@
        ^{:key i}
        [:span.pip {:class [(when (= i k) "cur") (when-let [sc (scores i)] (str "s" (grade/stars sc)))]}])]))
 
+(defn- memory-head []
+  (let [{:keys [len tries best]} (<sub [:session])]
+    [:div.memory-head
+     [:b (tr :memory/length len)]
+     [:span.tries (for [i (range ev/memory-tries)] ^{:key i} [:span {:class (when (< i tries) "on")} "♥"])]
+     [:span.hint (tr :memory/best best)]]))
+
 (defn- status []
   (let [{:keys [phase]} (<sub [:run])
         cnt (<sub [:count])
         mode (:mode (<sub [:session]))]
     [:div.status
      (cond cnt [:span.count-in cnt]
-           (= phase :ready) (tr (keyword "status" (str "ready-" (name mode))))
+           (= phase :ready) (tr (keyword "status" (str "ready-" (name mode))) (:len (<sub [:session])))
            (= phase :listening) (tr :status/listening)
            (= phase :recording) [:b (tr (if (= mode :dive) :status/play-along :status/your-turn))]
            :else nil)]))
@@ -171,15 +185,17 @@
         result (<sub [:result])
         hl (<sub [:hl])
         marks (when result (into {} (map (fn [h nt] [[(:bar h) (:i h)] (name (:mark nt))]) (<sub [:hits]) (:notes result))))
-        show? (or (not= mode :listen) (= phase :done))
+        show? (or (not (#{:listen :memory} mode)) (= phase :done))
         syl-sys (:syllables s)
         syls (when (and (not= syl-sys :none) (or (= mode :dive) (:syl-read s)))
                (mapv #(rh/syllables syl-sys %) bars))
         busy? (#{:listening :recording} phase)]
     [:div.card.exercise
-     [:div.ex-head
-      [progress]
-      [:span.hint (tr :ui/item (inc k) n)]]
+     (if (= mode :memory)
+       [memory-head]
+       [:div.ex-head
+        [progress]
+        [:span.hint (tr :ui/item (inc k) n)]])
      [status]
      [:div.score-wrap
       (if show?
@@ -202,19 +218,28 @@
         [:<>
          [:button {:on-click #(>evt [:hear])} (tr :ui/hear)]
          [:button {:on-click #(>evt [:hear-yours])} (tr :ui/hear-yours)]
-         [:button {:on-click #(>evt [:again])} (tr :ui/again)]
-         [:button.primary {:on-click #(>evt [:next])} (tr (if (= (inc k) n) :ui/finish :ui/next))]]
+         (when-not (= mode :memory)
+           [:button {:on-click #(>evt [:again])} (tr :ui/again)])
+         [:button.primary {:on-click #(>evt [:next])}
+          (if (= mode :memory)
+            (case (<sub [:memory-step])
+              :longer (tr :memory/longer (inc (:len (<sub [:session]))))
+              :retry (tr :memory/retry)
+              (tr :ui/finish))
+            (tr (if (= (inc k) n) :ui/finish :ui/next)))]]
         nil)]
      (when-not busy? [:p.hint.keys-hint (tr :ui/keys-hint)])]))
 
 (defn summary-card []
-  (let [{:keys [summary mode level]} (<sub [:session])
-        {:keys [score stars msg record?]} summary]
+  (let [{:keys [summary mode level kind]} (<sub [:session])
+        {:keys [score stars msg record? best]} summary]
     [:div.card.summary {:class (str "s" stars)}
      [:div.big-stars [star-row stars]]
      [:h2 (tr :cheer/session stars msg)]
      (when record? [:div.record (tr :ui/new-record)])
-     [:p (tr :ui/session-score (Math/round (* 100 score)) (tr (keyword "mode" (name mode))) level)]
+     (if (= mode :memory)
+       [:p (tr :memory/longest best) " · " (tr (keyword "memory" (name kind))) " · " (tr :ui/level) " " level]
+       [:p (tr :ui/session-score (Math/round (* 100 score)) (tr (keyword "mode" (name mode))) level)])
      [:div.actions.center
       [:button.primary.big {:on-click #(>evt [:session/new])} (tr :ui/new-session)]]]))
 
@@ -248,7 +273,7 @@
         [:h3 (tr :stats/overview)]
         [:table.stats
          [:tbody
-          (for [m [:listen :read :both :dive] :let [{:keys [n] st :stars} (modes m)] :when n]
+          (for [m [:listen :read :both :memory :dive] :let [{:keys [n] st :stars} (modes m)] :when n]
             ^{:key m}
             [:tr [:td (tr (keyword "mode" (name m)))] [:td.num (tr :stats/attempts n)]
              [:td [star-row (Math/round st)]]])]]]
@@ -274,10 +299,11 @@
         [:div.card
         [:h3 (tr :stats/sessions)]
         [:ul.sessions
-         (for [{:keys [t mode level score]} (reverse (take-last 10 sessions))]
+         (for [{:keys [t mode level score best]} (reverse (take-last 10 sessions))]
            ^{:key t}
-           [:li [star-row (grade/stars score)]
-            [:span (tr (keyword "mode" (name mode))) " · " (tr :ui/level) " " level]
+           [:li [star-row (if best (grade/memory-stars best) (grade/stars score))]
+            [:span (tr (keyword "mode" (name mode))) " · " (tr :ui/level) " " level
+             (when best (str " · " (tr :memory/longest best)))]
             [:small.hint (.toLocaleDateString (js/Date. t))]])]])
        [:div.actions [reset-button]]])))
 
