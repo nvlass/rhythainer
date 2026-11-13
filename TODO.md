@@ -9,6 +9,7 @@
   - Not in quick dive (mic + speaker at once). A visual metronome (pulsing dot) instead of audible clicks while clapping.
 - [ ] Memory mode: Simon-style. Start with one bar, add a bar after each success; the score is the longest sequence held.
 - [ ] Read mode: option to hide the notation after N seconds and play from memory.
+- [ ] Drop-out / gap exercises (as drummers practise): a rhythm or groove plays with the student tapping along, then the sound (clicks included) drops out for X bars while they keep going, and comes back to show whether they're still in time. Options: bars on / bars off (e.g. 2 on 2 off, 4 on 1 off), gaps that grow each cycle. Grade the taps in the silent bars against the strict grid; show drift per gap on the timeline.
 - [ ] Adaptive selection: drill the cells with the worst recent accuracy more often (`stats/cells` already tallies per cell).
 - [ ] Link from the music-trainer.app front page and add to its `deploy.sh`.
 
