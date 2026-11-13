@@ -178,25 +178,29 @@
           :dive {:db (assoc db :run {:token tok :phase :recording :t0 t0 :taps []})
                  :audio/schedule sched
                  :later (concat (:later c) (:later p) [[(ms (- (deadline db t0) now)) [:finish tok]]])}
-          {:db (assoc-in db [:run :phase] :listening)
-           :audio/schedule sched
-           :later (concat (:later c) (:later p) [[(ms (- (+ t0 (total-s db)) now)) [:turn tok]]])})))))
+          ;; The turn's count-in is scheduled with the rhythm, on the bar right after it, so the pulse
+          ;; carries on unbroken; starting it from a timer put it ~100 ms off the beat just heard.
+          (let [end (+ t0 (total-s db))
+                c2 (count-fx tok end ci b now)
+                turn-t0 (when (pos? ci) (+ end (* ci b)))]
+            {:db (assoc-in db [:run :phase] :listening)
+             :audio/schedule (update sched :clicks concat (:clicks c2))
+             :later (concat (:later c) (:later p) (:later c2) [[(ms (- end now)) [:turn tok turn-t0]]])}))))))
 
 (rf/reg-event-fx :turn
   [(rf/inject-cofx :now)]
-  (fn [{:keys [db now]} [_ tok]]
+  (fn [{:keys [db now]} [_ tok t0]]
     (when (= tok (get-in db [:run :token]))
       (let [b (beat-s db)
             beats (get-in db [:ex :beats])
+            fresh? (and (nil? t0) (lead-in? db))
             t (+ now 0.1)
-            t0 (when (lead-in? db) (+ t (* beats b)))
+            t0 (if fresh? (+ t (* beats b)) t0)
             db (assoc db :run {:token tok :phase :recording :t0 t0 :taps []})]
-        (if t0
-          (let [c (count-fx tok t beats b now)]
-            {:db db
-             :audio/schedule {:clicks (:clicks c)}
-             :later (conj (vec (:later c)) [(ms (- (deadline db t0) now)) [:finish tok]])})
-          {:db db})))))
+        (cond-> {:db db}
+          fresh? (merge (let [c (count-fx tok t beats b now)]
+                          {:audio/schedule {:clicks (:clicks c)} :later (:later c)}))
+          t0 (update :later (fnil conj []) [(ms (- (deadline db t0) now)) [:finish tok]]))))))
 
 (rf/reg-event-fx :tap
   (fn [{:keys [db]} [_ t]]
