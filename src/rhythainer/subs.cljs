@@ -10,5 +10,7 @@
 
 (rf/reg-sub :hits (fn [db _] (ev/hits db)))
 (rf/reg-sub :expected (fn [db _] (ev/expected db)))
+(rf/reg-sub :clap? (fn [db _] (ev/clap? db)))
+(rf/reg-sub :mic-error (fn [db _] (:mic-error db)))
 (rf/reg-sub :beat-s (fn [db _] (ev/beat-s db)))
 (rf/reg-sub :memory-step (fn [db _] (ev/memory-step db)))

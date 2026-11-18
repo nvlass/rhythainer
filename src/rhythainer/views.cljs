@@ -39,12 +39,14 @@
   [:span.stars (for [k (range 3)] ^{:key k} [:span {:class (when (< k n) "on")} "★"])])
 
 (defn- tap-pad
-  "Taps are timed from the event's own timestamp, so re-frame's dispatch delay doesn't matter."
-  [active? label]
+  "Taps are timed from the event's own timestamp, so re-frame's dispatch delay doesn't matter. With `heard`
+   (the taps so far, when clapping) it flashes on each one."
+  [active? label & [heard]]
   [:button.pad {:class (when active? "active")
                 :on-pointer-down (fn [e]
                                    (.preventDefault e)
                                    (>evt [:tap (audio/tap-time (.. e -nativeEvent -timeStamp))]))}
+   (when (pos? heard) ^{:key heard} [:span.flash])
    label])
 
 ;; ---------------------------------------------------------------- setup
@@ -102,7 +104,12 @@
              [field (tr :ui/timing)
               [seg [[:strict (tr :ui/strict)] [:relaxed (tr :ui/relaxed)] [:easy (tr :ui/easy)]] (:timing s) (setter :timing)]
               [:small.hint (tr (keyword "ui" (str (name (:timing s)) "-hint")))]]
-             [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]])
+             [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]
+             [field (tr :ui/input)
+              [seg [[:tap (tr :ui/tap)] [:clap (tr :ui/clap)]] (:input s) (setter :input)]
+              [:small.hint (tr (keyword "ui" (str (name (:input s)) "-hint")))]
+              (when-let [err (<sub [:mic-error])]
+                [:small.hint.bad (tr (keyword "ui" (str "mic-" (name err))))])]])
           [toggle (tr :ui/focus) (:focus s) (setter :focus) (tr :ui/focus-hint)]
           [toggle (tr :ui/syl-read) (:syl-read s) (setter :syl-read)]
           (when-not (or memory? stream?)
@@ -242,7 +249,9 @@
         [:div.hidden-score {:class (when hl "pulse")} "🎧"])]
      (when result [result-panel])
      (when-not (= phase :done)
-       [tap-pad (= phase :recording) (tr :ui/tap)])
+       (if (<sub [:clap?])
+         [tap-pad (= phase :recording) [:<> "👏 " (tr :ui/clap)] (count (:taps (<sub [:run])))]
+         [tap-pad (= phase :recording) (tr :ui/tap)]))
      [:div.actions
       (case phase
         :ready [:button.primary.big {:on-click #(>evt [:start])} (tr :ui/start)]

@@ -275,6 +275,10 @@ button.pad {
   transition: transform .05s, background .05s;
 }
 button.pad.active { border: 2px solid var(--accent); color: var(--accent); background: var(--accent-soft); }
+button.pad { position: relative; overflow: hidden; }
+button.pad .flash { position: absolute; inset: 0; background: var(--accent); opacity: 0; animation: flash .25s ease-out; pointer-events: none; }
+@keyframes flash { 0% { opacity: .45; } 100% { opacity: 0; } }
+.hint.bad { color: var(--bad); display: block; }
 button.pad.active:active { transform: scale(.985); background: var(--accent); color: var(--accent-ink); }
 
 .stars { letter-spacing: 2px; }

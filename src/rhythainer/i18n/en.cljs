@@ -108,6 +108,12 @@
     :session-len "Exercises per round"
     :item (fn [_ k n] (str k " of " n))
     :tap "Tap"
+    :clap "Clap"
+    :input "Input"
+    :tap-hint "Tap the pad, or press Space, F or J."
+    :clap-hint "Clap into the microphone. Works best in a quiet room, with headphones or the volume low."
+    :mic-denied "The microphone is blocked: allow it in the browser's site settings."
+    :mic-failed "Couldn't open the microphone."
     :start "Start"
     :stop "Stop"
     :done "Done"

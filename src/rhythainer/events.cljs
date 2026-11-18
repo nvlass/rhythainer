@@ -24,6 +24,7 @@
    :stream-len 16
    :stream-click true
    :tap-sound true
+   :input :tap
    :latency 0})
 
 (def session-settings #{:mode :level :focus :beats :bars :session-len :memory-kind :stream-len :stream-click})
@@ -46,6 +47,9 @@
 (rf/reg-fx :knock #(audio/knock! %))
 (rf/reg-fx :later (fn [items] (doseq [[ms ev] items] (js/setTimeout #(rf/dispatch ev) (max 0 ms)))))
 (rf/reg-fx :save (fn [kvs] (doseq [[k v] kvs] (storage/save! k v))))
+(rf/reg-fx :mic (fn [on?] (if on?
+                             (audio/mic-on! #(rf/dispatch [:clap %]) #(rf/dispatch [:mic/failed %]))
+                             (audio/mic-off!))))
 (rf/reg-fx :html-lang (fn [lang] (set! (.. js/document -documentElement -lang) (name lang))))
 
 ;; ---------------------------------------------------------------- derived
@@ -63,6 +67,10 @@
   "Any tempo counts (relaxed or easy timing)."
   [db]
   (and (not (along? db)) (#{:relaxed :easy} (get-in db [:settings :timing]))))
+(defn clap?
+  "Claps on the microphone count as taps; not while something plays along (it would hear itself)."
+  [db]
+  (and (not (along? db)) (= :clap (get-in db [:settings :input]))))
 (defn easy? [db] (and (relaxed? db) (= :easy (get-in db [:settings :timing]))))
 
 (defn hits [db] (rh/hits (get-in db [:ex :bars]) (get-in db [:ex :beats])))
@@ -134,8 +142,16 @@
 (rf/reg-event-fx :storage/loaded
   (fn [{:keys [db]} [_ {:keys [settings attempts sessions]}]]
     (let [s (merge default-settings (select-keys settings (keys default-settings)))]
-      {:db (new-session (assoc db :settings s :attempts (vec attempts) :sessions (vec sessions)))
-       :html-lang (:lang s)})))
+      (let [db (new-session (assoc db :settings s :attempts (vec attempts) :sessions (vec sessions)))]
+        {:db db :html-lang (:lang s) :mic (clap? db)}))))
+
+(rf/reg-event-fx :clap
+  (fn [{:keys [db]} [_ t]]
+    (when (and (clap? db) (not= :running (get-in db [:calib :phase])))
+      {:dispatch [:tap t]})))
+
+(rf/reg-event-db :mic/failed
+  (fn [db [_ reason]] (assoc db :mic-error (if (= reason "NotAllowedError") :denied :failed))))
 
 (rf/reg-event-db :resize (fn [db [_ w]] (assoc db :width w)))
 
@@ -151,7 +167,7 @@
     (let [db (cond-> (assoc-in db [:settings k] v)
                (= k :tolerance) (assoc-in [:settings :tempo] (get-in grade/tolerances [v :tempo]))
                (session-settings k) new-session)]
-      (cond-> {:db db :save {:settings (:settings db)}}
+      (cond-> {:db (dissoc db :mic-error) :save {:settings (:settings db)} :mic (clap? db)}
         (session-settings k) (assoc :audio/stop nil)
         (= k :lang) (assoc :html-lang v)))))
 
@@ -257,7 +273,7 @@
           (cond-> {:db (assoc-in db [:run :taps] taps)}
             (not (along? db)) (assoc :later (cond-> [[(idle-ms db) [:idle token (count taps)]]]
                                              by-count? (conj [400 [:finish token]])))
-            (get-in db [:settings :tap-sound]) (assoc :knock (if (dive? db) :tick :wood))))))))
+            (and (get-in db [:settings :tap-sound]) (not (clap? db))) (assoc :knock (if (dive? db) :tick :wood))))))))
 
 (rf/reg-event-fx :idle
   (fn [{:keys [db]} [_ tok n]]

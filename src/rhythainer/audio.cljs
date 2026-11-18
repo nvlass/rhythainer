@@ -142,3 +142,92 @@
 (defn knock! [kind]
   (let [t (+ (now) 0.002)]
     (if (= kind :tick) (tick! t) (woodblock! t false))))
+
+;; ---------------------------------------------------------------- clap input
+
+;; High-pass at 1.5 kHz, rectify, then a fast envelope (1 ms attack, 10 ms release) against a slow one (100 ms):
+;; an onset is fast > k·slow + floor, at least 80 ms after the last. Times are the audio clock at the block.
+(def ^:private onset-src "
+class Onset extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    const sr = sampleRate;
+    this.a = 1 / (1 + 2 * Math.PI * 1500 / sr);
+    this.fa = 1 - Math.exp(-1 / (0.001 * sr));
+    this.fr = 1 - Math.exp(-1 / (0.010 * sr));
+    this.s = 1 - Math.exp(-1 / (0.100 * sr));
+    this.hp = 0; this.px = 0; this.fast = 0; this.slow = 0; this.last = -1e9;
+    this.k = 4; this.floor = 0.02; this.gap = 0.08 * sr;
+    this.port.onmessage = e => Object.assign(this, e.data);
+  }
+  process(inputs) {
+    const x = inputs[0] && inputs[0][0];
+    if (!x) return true;
+    for (let i = 0; i < x.length; i++) {
+      this.hp = this.a * (this.hp + x[i] - this.px);
+      this.px = x[i];
+      const r = Math.abs(this.hp);
+      this.fast += (r > this.fast ? this.fa : this.fr) * (r - this.fast);
+      this.slow += this.s * (r - this.slow);
+      const f = currentFrame + i;
+      if (this.fast > this.k * this.slow + this.floor && f - this.last > this.gap) {
+        this.last = f;
+        this.port.postMessage(f / sampleRate);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('onset', Onset);
+")
+
+(defonce mic (atom nil))
+(defonce ^:private module (atom nil))
+
+(defn- set-session! [type]
+  (when-let [session (.-audioSession js/navigator)]
+    (set! (.-type session) type)))
+
+(defn mic-on!
+  "Opens the microphone and calls `on-onset` with each clap's time, on the audio clock as heard (less the
+   output and input latency); `on-error` if it can't."
+  [on-onset on-error]
+  (when-not @mic
+    (let [^js c (context)
+          opening #js {}]
+      (reset! mic opening)
+      (set-session! "play-and-record")
+      (-> (js/navigator.mediaDevices.getUserMedia
+           #js {:audio #js {:echoCancellation false :noiseSuppression false :autoGainControl false}})
+          (.then (fn [stream]
+                   (-> (or @module
+                           (reset! module (.addModule (.-audioWorklet c)
+                                                      (js/URL.createObjectURL
+                                                       (js/Blob. #js [onset-src] #js {:type "application/javascript"})))))
+                       (.then (fn []
+                                (if-not (identical? opening @mic)
+                                  (doseq [t (.getTracks stream)] (.stop t))
+                                  (let [src (.createMediaStreamSource c stream)
+                                        node (js/AudioWorkletNode. c "onset")
+                                        mute (.createGain c)
+                                        in-lat (or (some-> (.getAudioTracks stream) first .getSettings .-latency) 0.01)
+                                        lat (+ in-lat (or (.-outputLatency c) (.-baseLatency c) 0))]
+                                    (set! (.. mute -gain -value) 0)
+                                    (.connect src node)
+                                    (.connect node mute)
+                                    (.connect mute (.-destination c))
+                                    (set! (.. node -port -onmessage) #(on-onset (- (.-data %) lat)))
+                                    (reset! mic {:stream stream :src src :node node :mute mute}))))))))
+          (.catch (fn [e]
+                    (when (identical? opening @mic) (reset! mic nil))
+                    (set-session! "playback")
+                    (on-error (.-name e))))))))
+
+(defn mic-off! []
+  (when-let [m @mic]
+    (reset! mic nil)
+    (when (map? m)
+      (let [{:keys [^js stream ^js src ^js node ^js mute]} m]
+        (doseq [t (.getTracks stream)] (.stop t))
+        (.disconnect src) (.disconnect node) (.disconnect mute)))
+    (set-session! "playback")))
