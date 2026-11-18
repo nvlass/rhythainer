@@ -59,7 +59,11 @@
   [db]
   (or (dive? db) (stream? db)))
 (defn lead-in? [db] (or (along? db) (get-in db [:settings :lead-in])))
-(defn relaxed? [db] (and (not (along? db)) (= :relaxed (get-in db [:settings :timing]))))
+(defn relaxed?
+  "Any tempo counts (relaxed or easy timing)."
+  [db]
+  (and (not (along? db)) (#{:relaxed :easy} (get-in db [:settings :timing]))))
+(defn easy? [db] (and (relaxed? db) (= :easy (get-in db [:settings :timing]))))
 
 (defn hits [db] (rh/hits (get-in db [:ex :bars]) (get-in db [:ex :beats])))
 
@@ -278,13 +282,14 @@
                               :taps (map #(- % lat (or t0 0)) taps)
                               :anchored? (some? t0)
                               :relaxed? (relaxed? db)
+                              :easy? (easy? db)
                               :beat-s (beat-s db)
                               :tolerance (:tolerance s)})
               {:keys [mode level k]} (:session db)
               attempt (merge (select-keys g [:score :stars :n :perfect :good :missed :mean :spread])
                              {:mode mode :kind (get-in db [:session :kind]) :level level :beats (get-in db [:ex :beats])
                               :bars (count (get-in db [:ex :bars])) :tempo (:tempo s)
-                              :timing (if (relaxed? db) :relaxed :strict) :anchored (some? t0)
+                              :timing (if (relaxed? db) (:timing s) :strict) :anchored (some? t0)
                               :tolerance (:tolerance s) :extra (count (:extra g))
                               :cells (cell-tally (hits db) (:notes g)) :t (js/Date.now)})
               attempts (vec (take-last 3000 (conj (:attempts db) attempt)))]

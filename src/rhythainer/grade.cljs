@@ -5,11 +5,11 @@
 ;; (taps are already relative to the downbeat), strict without one fits the offset, relaxed fits both.
 
 (def tolerances
-  "Half-width of the hit window: the larger of `ms` and `frac` of a beat."
-  {:young {:ms 120 :frac 0.18 :tempo 72}
-   :kids {:ms 90 :frac 0.12 :tempo 84}
-   :teens {:ms 70 :frac 0.10 :tempo 90}
-   :pro {:ms 40 :frac 0.06 :tempo 100}})
+  "Half-width of the hit window: the larger of `ms` and `frac` of a beat. Easy timing uses `easy`, of a beat."
+  {:young {:ms 120 :frac 0.18 :easy 0.4 :tempo 72}
+   :kids {:ms 90 :frac 0.12 :easy 0.33 :tempo 84}
+   :teens {:ms 70 :frac 0.10 :easy 0.28 :tempo 90}
+   :pro {:ms 40 :frac 0.06 :easy 0.2 :tempo 100}})
 
 (defn windows
   "Each onset's window, kept under half the gap to its neighbours so windows never overlap."
@@ -129,29 +129,121 @@
            :mean (mean errs) :spread (sd errs)
            :gaps (long-gaps expected taps notes beat-s))))
 
+(defn- easy-align
+  "Pairs [i j] of note and tap judged on the gaps between them, so tempo may drift: from the previous pair,
+   the tapped gap over the note's tempo scale `ss` against the notated gap, within the note's window. A skipped
+   note or tap costs 1, at most 3 in a row, and |i - j| stays within 8 of the count difference."
+  [expected ws ss taps]
+  (let [n (count expected)
+        m (count taps)
+        band (+ 8 (Math/abs (- n m)))
+        idx (fn [i j] (+ (* i m) j))
+        best (js/Float64Array. (* n m))
+        prev (js/Int32Array. (* n m))
+        cost (fn [i' j' i j]
+               (let [e (/ (- (/ (- (taps j) (taps j')) (ss i)) (- (expected i) (expected i'))) (ws i))]
+                 (when (<= (Math/abs e) 1) (* e e))))]
+    (doseq [i (range n) j (range m)
+            :let [k (idx i j)]]
+      (aset best k (if (> (Math/abs (- i j)) band) ##Inf (+ i j)))
+      (aset prev k -1)
+      (when (<= (Math/abs (- i j)) band)
+        (doseq [i' (range (max 0 (- i 4)) i)
+                j' (range (max 0 (- j 4)) j)
+                :let [b (aget best (idx i' j'))]
+                :when (< b ##Inf)
+                :let [c (cost i' j' i j)]
+                :when c
+                :let [v (+ b (- i i' 1) (- j j' 1) c)]
+                :when (< v (aget best k))]
+          (aset best k v)
+          (aset prev k (idx i' j')))))
+    (let [[_ end] (reduce (fn [[c _ :as acc] k]
+                            (let [v (+ (aget best k) (- n (quot k m) 1) (- m (mod k m) 1))]
+                              (if (< v c) [v k] acc)))
+                          [(+ n m) -1] (range (* n m)))]
+      (loop [k end out ()]
+        (if (neg? k) (vec out) (recur (aget prev k) (conj out [(quot k m) (mod k m)])))))))
+
+(defn- local-scales
+  "Each note's tempo scale, from the pairs up to 4 either side of the last pair at or before it."
+  [expected taps pairs s0]
+  (let [k (count pairs)
+        sc (vec (for [q (range k)
+                      :let [[i0 j0] (pairs (max 0 (- q 4)))
+                            [i1 j1] (pairs (min (dec k) (+ q 4)))
+                            s (when (> i1 i0) (/ (- (taps j1) (taps j0)) (- (expected i1) (expected i0))))]]
+                  (if (and s (sane-scale? s)) s s0)))
+        by-note (zipmap (map first pairs) sc)]
+    (vec (rest (reductions (fn [s i] (get by-note i s)) (if (seq sc) (sc 0) s0) (range (count expected)))))))
+
+(defn- grade-easy
+  "Like `grade`, but each note is judged by the gap from the previous matched one at the local tempo, and
+   windows are `easy` of a beat. Taps are shown at their note plus that error."
+  [{:keys [expected taps beat-s tolerance]}]
+  (let [n (count expected)
+        ws (windows expected beat-s {:ms 0 :frac (:easy (tolerances tolerance))})
+        s0 (let [s (when (and (> (count taps) 1) (> n 1))
+                     (/ (- (peek taps) (first taps)) (- (peek expected) (first expected))))]
+             (if (and s (sane-scale? s)) s 1))
+        ss (local-scales expected taps (easy-align expected ws (vec (repeat n s0)) taps) s0)
+        pairs (easy-align expected ws ss taps)
+        errs (into {} (map (fn [prev [i j]]
+                             [i [j (if-let [[i' j'] prev]
+                                     (- (/ (- (taps j) (taps j')) (ss i)) (- (expected i) (expected i')))
+                                     0)]])
+                           (cons nil pairs) pairs))
+        notes (vec (for [i (range n)]
+                     (if-let [[j err] (errs i)]
+                       {:err err :tap j :mark (if (<= (Math/abs err) (/ (ws i) 2)) :perfect :good)}
+                       {:mark :missed})))
+        shown (into {} (for [[i [j err]] errs] [j (+ (expected i) err)]))
+        used (sort (keys shown))
+        place (fn [j]
+                (or (shown j)
+                    (let [a (last (filter #(< % j) used))
+                          b (first (filter #(> % j) used))]
+                      (cond (and a b) (+ (shown a) (* (- (taps j) (taps a)) (/ (- (shown b) (shown a)) (- (taps b) (taps a)))))
+                            a (+ (shown a) (/ (- (taps j) (taps a)) s0))
+                            b (- (shown b) (/ (- (taps b) (taps j)) s0))
+                            :else (/ (- (taps j) (first taps)) s0)))))
+        fit (let [f (when (>= (count pairs) 2) (lsq (for [[i j] pairs] [(expected i) (taps j)])))]
+              (if (and f (sane-scale? (second f))) f [0 s0]))
+        gaps (keep (fn [[[i' _] [i _]]]
+                     (when (and (= i' (dec i)) (> (- (expected i) (expected i')) (* 1.01 beat-s)))
+                       (second (errs i))))
+                   (partition 2 1 pairs))]
+    (assoc (tally {:expected expected :notes notes :taps (mapv place (range (count taps)))
+                   :extra (vec (remove (set used) (range (count taps)))) :windows ws :fit fit}
+                  beat-s)
+           :gaps (when (>= (count gaps) 2) (mean gaps)))))
+
 (defn grade
   "Marks per note (:perfect inside half the window, :good inside it, :missed), extra taps, the fit,
-   a 0–1 score and timing figures in seconds (mean and spread of the errors, `long-gaps`)."
-  [{:keys [expected taps anchored? relaxed? beat-s tolerance]}]
+   a 0–1 score and timing figures in seconds (mean and spread of the errors, `long-gaps`).
+   With `easy?`, `grade-easy`."
+  [{:keys [expected taps anchored? relaxed? easy? beat-s tolerance] :as opts}]
   (let [expected (vec expected)
         taps (vec (sort taps))
         ws (windows expected beat-s (tolerances tolerance))
-        to-score (fn [[off s]] (mapv #(/ (- % off) s) taps))
-        fit (loop [fit (initial-fit expected taps anchored? relaxed?) k 0]
-              (let [fit' (refit fit (align expected ws (to-score fit)) expected taps anchored? relaxed?)]
-                (if (or (= fit fit') (= k 5)) fit' (recur fit' (inc k)))))
-        s-taps (to-score fit)
-        pairs (align expected ws s-taps)
-        matched (into {} pairs)
-        used (set (map second pairs))
-        notes (vec (for [i (range (count expected))]
-                     (if-let [j (matched i)]
-                       (let [err (- (s-taps j) (expected i))]
-                         {:err err :tap j :mark (if (<= (Math/abs err) (/ (ws i) 2)) :perfect :good)})
-                       {:mark :missed})))]
-    (tally {:expected expected :notes notes :taps s-taps :extra (vec (remove used (range (count taps))))
-            :windows ws :fit fit}
-           beat-s)))
+        to-score (fn [[off s]] (mapv #(/ (- % off) s) taps))]
+    (if easy?
+      (grade-easy (assoc opts :expected expected :taps taps))
+      (let [fit (loop [fit (initial-fit expected taps anchored? relaxed?) k 0]
+                  (let [fit' (refit fit (align expected ws (to-score fit)) expected taps anchored? relaxed?)]
+                    (if (or (= fit fit') (= k 5)) fit' (recur fit' (inc k)))))
+            s-taps (to-score fit)
+            pairs (align expected ws s-taps)
+            matched (into {} pairs)
+            used (set (map second pairs))
+            notes (vec (for [i (range (count expected))]
+                         (if-let [j (matched i)]
+                           (let [err (- (s-taps j) (expected i))]
+                             {:err err :tap j :mark (if (<= (Math/abs err) (/ (ws i) 2)) :perfect :good)})
+                           {:mark :missed})))]
+        (tally {:expected expected :notes notes :taps s-taps :extra (vec (remove used (range (count taps))))
+                :windows ws :fit fit}
+               beat-s)))))
 
 (defn bar-taps
   "The taps that belong to a bar with onsets `on`: from halfway back to `prev`, the previous bar's last onset,

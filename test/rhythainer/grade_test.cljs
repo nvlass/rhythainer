@@ -95,3 +95,19 @@
     (is (= 1 (:missed r)))
     (is (= 1 (count (:extra r))))
     (is (< (Math/abs (:gaps r)) 1e-9))))
+
+(deftest easy-forgives-drift-not-wrong-values
+  (let [long (vec (for [b (range 4) e expected] (+ (* 3 b) e)))
+        ;; each gap 2% longer than the one before: 1.6 times slower by the end
+        drift (vec (reductions + 3 (map-indexed (fn [k d] (* d (Math/pow 1.02 k))) (map - (rest long) long))))]
+    (is (pos? (:missed (run drift :expected long :anchored? false :relaxed? true))))
+    (let [r (run drift :expected long :anchored? false :easy? true)]
+      (is (zero? (:missed r)))
+      (is (empty? (:extra r)))))
+  (is (pos? (:missed (run (assoc expected 2 1.05) :anchored? false :easy? true))) "a wrong value still misses")
+  (let [r (run [0 0.6 1.2 1.8 2.4] :anchored? false :easy? true)]
+    (is (= 1 (:missed r)))
+    (is (= :missed (:mark ((:notes r) 2)))))
+  (let [r (run [0 0.6 0.9 1.0 1.2 1.8 2.4] :anchored? false :easy? true)]
+    (is (zero? (:missed r)))
+    (is (= [3] (:extra r)))))

@@ -27,10 +27,10 @@
                :dive "Every pattern of the level in turn: read along and tap with the woodblock."}
 
    :level {:l1 "Quarter notes and quarter rests"
-           :l2 "Half, dotted half and whole notes, half rests"
+           :l2 "Half notes and half rests"
            :l3 "Pairs of eighths"
            :l4 "Eighth rests: off-beat eighths"
-           :l5 "Dotted quarter + eighth"
+           :l5 "Dotted notes: dotted quarter + eighth, dotted half, whole note"
            :l6 "Syncopation: eighth, quarter, eighth"
            :l7 "Sixteenths"
            :l8 "Dotted eighth + sixteenth, sixteenth–eighth–sixteenth"
@@ -98,6 +98,8 @@
     :relaxed "Relaxed"
     :strict-hint "Keep the tempo you heard."
     :relaxed-hint "Any steady tempo counts: only the proportions between notes are checked."
+    :easy "Easy"
+    :easy-hint "Each gap between your taps is checked against the notes, at your own tempo, even if it drifts, with wider margins."
     :lead-in "Count-in"
     :lead-in-hint "a bar of clicks before your turn"
     :focus "Focus on the level"

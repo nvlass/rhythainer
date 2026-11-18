@@ -93,8 +93,8 @@
           (when-not stream?
             [:<>
              [field (tr :ui/timing)
-              [seg [[:strict (tr :ui/strict)] [:relaxed (tr :ui/relaxed)]] (:timing s) (setter :timing)]
-              [:small.hint (tr (if (= :strict (:timing s)) :ui/strict-hint :ui/relaxed-hint))]]
+              [seg [[:strict (tr :ui/strict)] [:relaxed (tr :ui/relaxed)] [:easy (tr :ui/easy)]] (:timing s) (setter :timing)]
+              [:small.hint (tr (keyword "ui" (str (name (:timing s)) "-hint")))]]
              [toggle (tr :ui/lead-in) (:lead-in s) (setter :lead-in) (tr :ui/lead-in-hint)]])
           [toggle (tr :ui/focus) (:focus s) (setter :focus) (tr :ui/focus-hint)]
           [toggle (tr :ui/syl-read) (:syl-read s) (setter :syl-read)]

@@ -30,12 +30,12 @@
    {:id :q-rest :level 1 :notes [(ev :quarter :rest)]}
    {:id :h :level 2 :notes [(ev :half)] :starts :strong}
    {:id :h-rest :level 2 :notes [(ev :half :rest)] :starts :strong}
-   {:id :h-dot :level 2 :notes [(ev :half :dot)] :starts :downbeat}
-   {:id :w :level 2 :notes [(ev :whole)] :starts :downbeat}
    {:id :ee :level 3 :notes [(ev :eighth) (ev :eighth)]}
    {:id :e-rest-e :level 4 :notes [(ev :eighth :rest) (ev :eighth)]}
    {:id :e-e-rest :level 4 :notes [(ev :eighth) (ev :eighth :rest)]}
    {:id :q-dot-e :level 5 :notes [(ev :quarter :dot) (ev :eighth)] :starts :strong}
+   {:id :h-dot :level 5 :notes [(ev :half :dot)] :starts :downbeat}
+   {:id :w :level 5 :notes [(ev :whole)] :starts :downbeat}
    {:id :e-q-e :level 6 :notes [(ev :eighth) (ev :quarter) (ev :eighth)] :starts :strong}
    {:id :ssss :level 7 :notes [(ev :16th) (ev :16th) (ev :16th) (ev :16th)]}
    {:id :e-ss :level 7 :notes [(ev :eighth) (ev :16th) (ev :16th)]}
@@ -106,14 +106,14 @@
 (defn- final-bar
   "Once there are half notes, the last bar ends on a long note."
   [rnd beats level focus first?]
-  (let [bar (bar-ticks beats)]
-    (if (or (< level 2) (= beats 2))
+  (let [bar (bar-ticks beats)
+        has? #(<= (:level (cell-by-id %)) level)]
+    (if (or (not (has? :h)) (= beats 2))
       (gen-bar rnd beats level focus first?)
-      (let [long-end (fn [len] (into (fill rnd beats level focus 0 (- bar len) first?)
-                                     (tag (cell-by-id (if (= len 96) :h :h-dot)))))]
-        (pick rnd (cond-> [[(long-end 96) 3]]
-                    (= beats 3) (conj [(tag (cell-by-id :h-dot)) 1])
-                    (= beats 4) (conj [(tag (cell-by-id :w)) 1])))))))
+      (let [h-end (into (fill rnd beats level focus 0 (- bar 96) first?) (tag (cell-by-id :h)))]
+        (pick rnd (cond-> [[h-end 3]]
+                    (and (= beats 3) (has? :h-dot)) (conj [(tag (cell-by-id :h-dot)) 1])
+                    (and (= beats 4) (has? :w)) (conj [(tag (cell-by-id :w)) 1])))))))
 
 (defn exercise
   "`n` bars of `beats` quarters drawn from the cells up to `level`; `focus` favours the level's own."
