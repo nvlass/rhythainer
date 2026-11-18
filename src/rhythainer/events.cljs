@@ -14,7 +14,7 @@
    :beats 4
    :bars 2
    :tempo 84
-   :timing :strict
+   :timing :relaxed
    :lead-in true
    :tolerance :kids
    :syllables :takadimi
@@ -96,11 +96,16 @@
 (defn- ms [secs] (* 1000 secs))
 
 (defn- idle-ms
-  "How long without a tap ends the turn: longer than any silence the rhythm has."
-  [db]
+  "How long without a tap ends the turn: longer than any silence the rhythm has, but only two beats once
+   the last tap is past the rhythm's end (with room for a slower tempo), so a missed note isn't waited for."
+  [db t0 taps]
   (let [e (expected db)
-        gap (if (> (count e) 1) (apply max (map - (rest e) e)) 0)]
-    (ms (max 2.5 (+ gap (* 2 (beat-s db)))))))
+        b (beat-s db)
+        gap (if (> (count e) 1) (apply max (map - (rest e) e)) 0)
+        start (or t0 (- (first taps) (first e)))]
+    (ms (if (> (peek taps) (+ start (* 1.15 (peek e))))
+          (max 1.2 (* 2 b))
+          (max 2.5 (+ gap (* 2 b)))))))
 
 ;; ---------------------------------------------------------------- sessions
 
@@ -271,7 +276,7 @@
               ;; With a fixed downbeat the deadline ends the turn; otherwise the last expected tap does.
               by-count? (and (not (along? db)) (or (nil? t0) (relaxed? db)) (>= (count taps) (count (expected db))))]
           (cond-> {:db (assoc-in db [:run :taps] taps)}
-            (not (along? db)) (assoc :later (cond-> [[(idle-ms db) [:idle token (count taps)]]]
+            (not (along? db)) (assoc :later (cond-> [[(idle-ms db t0 taps) [:idle token (count taps)]]]
                                              by-count? (conj [400 [:finish token]])))
             (and (get-in db [:settings :tap-sound]) (not (clap? db))) (assoc :knock (if (dive? db) :tick :wood))))))))
 
