@@ -10,6 +10,7 @@
 - [ ] Read mode: option to hide the notation after N seconds and play from memory.
 - [ ] Drop-out / gap exercises (as drummers practise): a rhythm or groove plays with the student tapping along, then the sound (clicks included) drops out for X bars while they keep going, and comes back to show whether they're still in time. Options: bars on / bars off (e.g. 2 on 2 off, 4 on 1 off), gaps that grow each cycle. Grade the taps in the silent bars against the strict grid; show drift per gap on the timeline.
 - [ ] Calibration nudge: when `:latency` was never calibrated and the recent anchored attempts are steadily off (e.g. |mean| > 40 ms with a small spread over the last 10), suggest calibrating, with a link to Settings. Shown once, dismissable. Open question: a steady early offset is often the student anticipating rather than the device, and calibration would hide it, so word it as "if your device plays late…" or offer it only for late offsets / adults.
+- [ ] Tighten relaxed timing? Waiting on user feedback. Options: cap the fitted tempo to ±15% of the set one (now 0.5–2×), or narrower windows than strict (e.g. 85%), since the fit already absorbs the tempo. First try the Teens & adults tolerance. Also decide whether to drop easy timing (migrate saved `:easy` to `:relaxed` on load).
 - [ ] Adaptive selection: drill the cells with the worst recent accuracy more often (`stats/cells` already tallies per cell).
 
 ## Later
