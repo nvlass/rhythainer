@@ -8,7 +8,7 @@
   "Half-width of the hit window: the larger of `ms` and `frac` of a beat. Easy timing uses `easy`, of a beat."
   {:young {:ms 120 :frac 0.18 :easy 0.4 :tempo 72}
    :kids {:ms 90 :frac 0.12 :easy 0.33 :tempo 84}
-   :teens {:ms 70 :frac 0.10 :easy 0.28 :tempo 90}
+   :teens {:ms 60 :frac 0.085 :easy 0.28 :tempo 90}
    :pro {:ms 40 :frac 0.06 :easy 0.2 :tempo 100}})
 
 (defn windows
