@@ -187,8 +187,18 @@ button.chip.on { background: var(--accent); border-color: var(--accent); color: 
 .slider input { width: 100%; accent-color: var(--accent); }
 .crash pre.crash-msg { white-space: pre-wrap; font-size: .8rem; color: var(--ink-3); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
 .crash .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-details.options summary { cursor: pointer; font-weight: 600; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-details.options summary .hint { font-weight: 400; }
+details.options summary {
+  cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+  width: fit-content; max-width: 100%; margin: 6px auto 0; padding: 8px 16px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--ink); border: 1px solid var(--accent);
+}
+details.options summary::-webkit-details-marker { display: none; }
+details.options summary:hover { background: var(--surface-2); }
+details.options summary .icon { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+details.options summary .icon circle { fill: var(--accent-soft); }
+details.options summary .current { color: var(--ink-2); font-size: .88rem; }
+details.options summary .chev { color: var(--accent); transition: transform .15s; }
+details.options[open] summary .chev { transform: rotate(180deg); }
 details.options[open] summary { margin-bottom: 12px; }
 
 .header-end { display: flex; align-items: center; gap: 10px; }
